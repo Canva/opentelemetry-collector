@@ -224,6 +224,9 @@ type HTTPServerSettings struct {
 	// Auth for this receiver
 	Auth *configauth.Authentication `mapstructure:"auth"`
 
+	// RateLimit for this receiver
+	RateLimit *RateLimit `mapstructure:"rate_limit"`
+
 	// MaxRequestBodySize sets the maximum request body size in bytes
 	MaxRequestBodySize int64 `mapstructure:"max_request_body_size"`
 
@@ -307,6 +310,17 @@ func (hss *HTTPServerSettings) ToServer(host component.Host, settings component.
 		}
 
 		handler = authInterceptor(handler, server)
+	}
+
+	// The RateLimit interceptor should always be right after auth to ensure
+	// the request rate is within an acceptable threshold.
+	if hss.RateLimit != nil {
+		limiter, err := hss.RateLimit.rateLimiter(host.GetExtensions())
+		if err != nil {
+			return nil, err
+		}
+
+		handler = rateLimitInterceptor(handler, limiter)
 	}
 
 	// TODO: emit a warning when non-empty CorsHeaders and empty CorsOrigins.
