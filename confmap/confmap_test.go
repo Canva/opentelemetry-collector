@@ -143,13 +143,14 @@ func TestExpandNilStructPointersHookFuncDefaultNotNilConfigNil(t *testing.T) {
 	assert.Equal(t, &Struct{}, cfg.MapStruct["struct"])
 }
 
-func TestUnmarshalWithErrorUnused(t *testing.T) {
+func TestUnmarshalWithIgnoreUnused(t *testing.T) {
 	stringMap := map[string]any{
 		"boolean": true,
 		"string":  "this is a string",
 	}
 	conf := NewFromStringMap(stringMap)
-	assert.Error(t, conf.Unmarshal(&TestIDConfig{}, WithErrorUnused()))
+	assert.Error(t, conf.Unmarshal(&TestIDConfig{}))
+	assert.NoError(t, conf.Unmarshal(&TestIDConfig{}, WithIgnoreUnused()))
 }
 
 type TestConfig struct {
@@ -393,7 +394,7 @@ type errConfig struct {
 	Foo string `mapstructure:"foo"`
 }
 
-func (tc *errConfig) Unmarshal(_ *Conf) error {
+func (tc *errConfig) Unmarshal(*Conf) error {
 	return errors.New("never works")
 }
 

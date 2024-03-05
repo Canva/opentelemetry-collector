@@ -30,13 +30,6 @@ type serviceHost struct {
 	serviceExtensions *extensions.Extensions
 }
 
-// ReportFatalError is used to report to the host that the receiver encountered
-// a fatal error (i.e.: an error that the instance can't recover from) after
-// its start function has already returned.
-func (host *serviceHost) ReportFatalError(err error) {
-	host.asyncErrorChannel <- err
-}
-
 func (host *serviceHost) GetFactory(kind component.Kind, componentType component.Type) component.Factory {
 	switch kind {
 	case component.KindReceiver:
@@ -65,4 +58,11 @@ func (host *serviceHost) GetExtensions() map[component.ID]component.Component {
 // for additional information.
 func (host *serviceHost) GetExporters() map[component.DataType]map[component.ID]component.Component {
 	return host.pipelines.GetExporters()
+}
+
+func (host *serviceHost) notifyComponentStatusChange(source *component.InstanceID, event *component.StatusEvent) {
+	host.serviceExtensions.NotifyComponentStatusChange(source, event)
+	if event.Status() == component.StatusFatalError {
+		host.asyncErrorChannel <- event.Err()
+	}
 }
