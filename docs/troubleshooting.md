@@ -11,8 +11,6 @@ Logs can be helpful in identifying issues. Always start by checking the log
 output and looking for potential issues.
 The verbosity level defaults to `INFO` and can be adjusted.
 
-#### Version 0.36 and above:
-
 Set the log level in the config `service::telemetry::logs`
 
 ```yaml
@@ -22,21 +20,11 @@ service:
       level: "debug"
 ```
 
-#### Version 0.35 and below:
-
-Pass `--log-level` flag to the `otelcol` process. See `--help` for more details.
-
-```console
-$ otelcol --log-level DEBUG
-```
-
 ### Metrics
 
 Prometheus metrics are exposed locally on port `8888` and path `/metrics`. For
 containerized environments it may be desirable to expose this port on a
 public interface instead of just locally.
-
-#### Version 0.43.0 and above:
 
 Set the address in the config `service::telemetry::metrics`
 
@@ -47,17 +35,24 @@ service:
       address: ":8888"
 ```
 
-#### Version 0.42.0 and below:
-
-Pass `--metrics-addr <ADDR>` flag to the `otelcol` process. See `--help` for
-more details.
-
-```console
-$ otelcol --metrics-addr 0.0.0.0:8888
-```
-
 A Grafana dashboard for these metrics can be found
 [here](https://grafana.com/grafana/dashboards/15983-opentelemetry-collector/).
+
+You can enhance metrics telemetry level using `level` field. The following is a list of all possible values and their explanations.
+
+- "none" indicates that no telemetry data should be collected;
+- "basic" is the recommended and covers the basics of the service telemetry.
+- "normal" adds some other indicators on top of basic.
+- "detailed" adds dimensions and views to the previous levels.
+
+For example:
+```yaml
+service:
+  telemetry:
+    metrics:
+      level: detailed
+      address: ":8888"
+```
 
 Also note that a Collector can be configured to scrape its own metrics and send
 it through configured pipelines. For example:
@@ -83,6 +78,22 @@ service:
       receivers: [prometheus]
       processors: []
       exporters: [debug]
+```
+
+### Traces
+
+OpenTelemetry Collector has an ability to send it's own traces using OTLP exporter. You can send the traces to OTLP server running on the same OpenTelemetry Collector, so it goes through configured pipelines. For example:
+
+```yaml
+service:
+  telemetry:
+    traces:
+      processors:
+        batch:
+          exporter:
+            otlp:
+              protocol: grpc/protobuf
+              endpoint: ${MY_POD_IP}:4317
 ```
 
 ### zPages
@@ -247,8 +258,7 @@ The Collector may exit/restart because:
 - Memory pressure due to missing or misconfigured
   [memory_limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md)
   processor.
-- [Improperly sized](https://github.com/open-telemetry/opentelemetry-collector/blob/main/docs/performance.md)
-  for load.
+- Improperly sized for load.
 - Improperly configured (for example, a queue size configured higher
   than available memory).
 - Infrastructure resource limits (for example Kubernetes).
@@ -257,7 +267,7 @@ The Collector may exit/restart because:
 
 Data may be dropped for a variety of reasons, but most commonly because of an:
 
-- [Improperly sized Collector](https://github.com/open-telemetry/opentelemetry-collector/blob/main/docs/performance.md) resulting in Collector being unable to process and export the data as fast as it is received.
+- Improperly sized Collector resulting in Collector being unable to process and export the data as fast as it is received.
 - Exporter destination unavailable or accepting the data too slowly.
 
 To mitigate drops, it is highly recommended to configure the
@@ -305,7 +315,7 @@ configuration issue. This could be due to a firewall, DNS, or proxy
 issue. Note that the Collector does have
 [proxy support](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter#proxy-support).
 
-### Startup failing in Windows Docker containers
+### Startup failing in Windows Docker containers (v0.90.1 and earlier)
 
 The process may fail to start in a Windows Docker container with the following
 error: `The service process could not connect to the service controller`. In

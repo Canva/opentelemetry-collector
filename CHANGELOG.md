@@ -7,6 +7,269 @@ If you are looking for developer-facing changes, check out [CHANGELOG-API.md](./
 
 <!-- next version -->
 
+## v1.3.0/v0.96.0
+
+### 🛑 Breaking changes 🛑
+
+- `configgrpc`: Remove deprecated `GRPCClientSettings`, `GRPCServerSettings`, and `ServerConfig.ToListenerContext`. (#9616)
+- `confighttp`: Remove deprecated `HTTPClientSettings`, `NewDefaultHTTPClientSettings`, and `CORSSettings`. (#9625)
+- `confignet`: Removes deprecated `NetAddr` and `TCPAddr` (#9614)
+
+### 💡 Enhancements 💡
+
+- `configtls`: Add `include_system_ca_certs_pool` to configtls, allowing to load system certs and additional custom certs. (#7774)
+- `otelcol`: Add `ConfigProviderSettings` to `CollectorSettings` (#4759)
+  This allows passing a custom list of `confmap.Provider`s to `otelcol.NewCommand`.
+- `pdata`: Update to OTLP v1.1.0 (#9587)
+  Introduces Span and SpanLink flags.
+- `confmap`: Update mapstructure to use a maintained fork, github.com/go-viper/mapstructure/v2. (#9634)
+  See https://github.com/mitchellh/mapstructure/issues/349 for context.
+  
+
+### 🧰 Bug fixes 🧰
+
+- `configretry`: Allow max_elapsed_time to be set to 0 for indefinite retries (#9641)
+- `client`: Make `Metadata.Get` thread safe (#9595)
+
+## v1.2.0/v0.95.0
+
+### 🛑 Breaking changes 🛑
+
+- `all`: scope name for all generated Meter/Tracer funcs now includes full package name (#9494)
+
+### 💡 Enhancements 💡
+
+- `confighttp`: Adds support for Snappy decompression of HTTP requests. (#7632)
+- `configretry`: Validate `max_elapsed_time`, ensure it is larger than `max_interval` and `initial_interval` respectively. (#9489)
+- `configopaque`: Mark module as stable (#9167)
+- `otlphttpexporter`: Add support for json content encoding when exporting telemetry (#6945)
+- `confmap/converter/expandconverter, confmap/provider/envprovider, confmap/provider/fileprovider, confmap/provider/httprovider, confmap/provider/httpsprovider, confmap/provider/yamlprovider`: Split confmap.Converter and confmap.Provider implementation packages out of confmap. (#4759, #9460)
+
+## v1.1.0/v0.94.0
+
+### 🛑 Breaking changes 🛑
+
+- `receiver/otlp`: Update gRPC code from `codes.InvalidArgument` to `codes.Internal` when a permanent error doesn't contain a gRPC status (#9415)
+
+### 🚩 Deprecations 🚩
+
+- `configgrpc`: Deprecate GRPCClientSettings, use ClientConfig instead (#6767)
+
+### 💡 Enhancements 💡
+
+- `mdatagen`: Add a generated test that checks the config struct using `componenttest.CheckConfigStruct` (#9438)
+- `component`: Add `component.UseLocalHostAsDefaultHost` feature gate that changes default endpoints from 0.0.0.0 to localhost (#8510)
+  The only component in this repository affected by this is the OTLP receiver.
+  
+- `confighttp`: Add support of Host header (#9395)
+- `mdatagen`: Remove use of ReportFatalError in generated tests (#9439)
+
+### 🧰 Bug fixes 🧰
+
+- `service`: fix opencensus bridge configuration in periodic readers (#9361)
+- `otlpreceiver`: Fix goroutine leak when GRPC server is started but HTTP server is unsuccessful (#9165)
+- `otlpexporter`: PartialSuccess is treated as success, logged as warning. (#9243)
+
+## v0.93.0
+
+### 🛑 Breaking changes 🛑
+
+- `exporterhelper`: remove deprecated exporterhelper.RetrySettings and exporterhelper.NewDefaultRetrySettings (#9256)
+- `configopaque`: configopaque.String implements `fmt.Stringer` and `fmt.GoStringer`, outputting [REDACTED] when formatted with the %s, %q or %#v verbs` (#9213)
+  This may break applications that rely on the previous behavior of opaque strings with `fmt.Sprintf` to e.g. build URLs or headers.
+  Explicitly cast the opaque string to a string before using it in `fmt.Sprintf` to restore the previous behavior.
+  
+
+### 🚀 New components 🚀
+
+- `extension/memory_limiter`: Introduce a `memory_limiter` extension which receivers can use to reject incoming requests when collector doesn't have enough memory (#8632)
+  The extension has the same configuration interface and behavior as the existing `memory_limiter` processor, which potentially can be deprecated and removed in the future
+
+### 💡 Enhancements 💡
+
+- `configtls`: add `cipher_suites` to configtls. (#8105)
+  Users can specify a list of cipher suites to pick from. If left blank, a safe default list is used.
+  
+- `service`: mark `telemetry.useOtelForInternalMetrics` as stable (#816)
+- `exporters`: Cleanup log messages for export failures (#9219)
+  1. Ensure an error message is logged every time and only once when data is dropped/rejected due to export failure.
+  2. Update the wording. Specifically, don't use "dropped" term when an error is reported back to the pipeline.
+     Keep the "dropped" wording for failures happened after the enabled queue.
+  3. Properly report any error reported by a queue. For example, a persistent storage error must be reported as a storage error, not as "queue overflow".
+  
+
+### 🧰 Bug fixes 🧰
+
+- `configgrpc`: Update dependency to address a potential crash in the grpc instrumentation (#9296)
+- `otlpreceiver`: Ensure OTLP receiver handles consume errors correctly (#4335)
+  Make sure OTLP receiver returns correct status code and follows the receiver contract (gRPC)
+- `zpagesextension`: Remove mention of rpcz page from zpages extension (#9328)
+
+## v1.0.1/v0.92.0
+
+### 🛑 Breaking changes 🛑
+
+- `exporters/sending_queue`: Do not re-enqueue failed batches, rely on the retry_on_failure strategy instead. (#8382)
+  The current re-enqueuing behavior is not obvious and cannot be configured. It takes place only for persistent queue
+  and only if `retry_on_failure::enabled=true` even if `retry_on_failure` is a setting for a different backoff retry
+  strategy. This change removes the re-enqueuing behavior. Consider increasing `retry_on_failure::max_elapsed_time` 
+  to reduce chances of data loss or set it to 0 to keep retrying until requests succeed.
+  
+- `confmap`: Make the option `WithErrorUnused` enabled by default when unmarshaling configuration (#7102)
+  The option `WithErrorUnused` is now enabled by default, and a new option `WithIgnoreUnused` is introduced to ignore
+  errors about unused fields.
+  
+- `status`: Deprecate `ReportComponentStatus` in favor of `ReportStatus`. This new function does not return an error. (#9148)
+
+### 🚩 Deprecations 🚩
+
+- `connectortest`: Deprecate connectortest.New[Metrics|Logs|Traces]Router in favour of connector.New[Metrics|Logs|Traces]Router (#9095)
+- `exporterhelper`: Deprecate exporterhelper.RetrySettings in favor of configretry.BackOffConfig (#9091)
+- `extension/ballast`: Deprecate `memory_ballast` extension. (#8343)
+  Use `GOMEMLIMIT` environment variable instead.
+  
+- `connector`: Deprecate [Metrics|Logs|Traces]Router in favour of [Metrics|Logs|Traces]RouterAndConsumer (#9095)
+
+### 💡 Enhancements 💡
+
+- `exporterhelper`: Add RetrySettings validation function (#9089)
+  Validate that time.Duration, multiplier values in configretry are non-negative, and randomization_factor is between 0 and 1
+  
+- `service`: Enable `telemetry.useOtelForInternalMetrics` by updating the flag to beta (#7454)
+  The metrics generated should be consistent with the metrics generated
+  previously with OpenCensus. Users can disable the behaviour
+  by setting `--feature-gates -telemetry.useOtelForInternalMetrics` at
+  collector start.
+  
+- `mdatagen`: move component from contrib to core (#9172)
+- `semconv`: Generated Semantic conventions 1.22.0. (#8686)
+- `confignet`: Add `dialer_timeout` config option. (#9066)
+- `processor/memory_limiter`: Update config validation errors (#9059)
+  - Fix names of the config fields that are validated in the error messages
+  - Move the validation from start to the initialization phrase 
+  
+- `exporterhelper`: Add config Validate for TimeoutSettings (#9104)
+
+### 🧰 Bug fixes 🧰
+
+- `memorylimiterprocessor`: Fixed leaking goroutines from memorylimiterprocessor (#9099)
+- `cmd/otelcorecol`: Fix the code detecting if the collector is running as a service on Windows. (#7350)
+  Removed the `NO_WINDOWS_SERVICE` environment variable given it is not needed anymore.
+- `otlpexporter`: remove dependency of otlphttpreceiver on otlpexporter (#6454)
+
+## v0.91.0
+
+### 💡 Enhancements 💡
+
+- `statusreporting`: Automates status reporting upon the completion of component.Start(). (#7682)
+- `service`: add resource attributes as labels to otel metrics to ensures backwards compatibility with OpenCensus metrics. (#9029)
+- `semconv`: Generated Semantic conventions 1.21. (#9056)
+- `config/confighttp`: Exposes http/2 transport settings to enable health check and workaround golang http/2 issue https://github.com/golang/go/issues/59690 (#9022)
+- `cmd/builder`: running builder version on binaries installed with `go install` will output the version specified at the suffix. (#8770)
+
+### 🧰 Bug fixes 🧰
+
+- `exporterhelper`: fix missed metric aggregations (#9048)
+  This ensures that context cancellation in the exporter doesn't interfere with metric aggregation. The OTel
+  SDK currently returns if there's an error in the context used in `Add`. This means that if there's a
+  cancelled context in an export, the metrics are now recorded.
+  
+- `service`: Fix bug where MutatesData would not correctly propagate through connectors. (#9053)
+
+## v0.90.1
+
+### 🧰 Bug fixes 🧰
+
+- `exporterhelper`: Remove noisy log (#9017)
+
+## v1.0.0/v0.90.0
+
+### 🛑 Breaking changes 🛑
+
+- `service`: To remain backwards compatible w/ the metrics generated today, otel generated metrics will be generated without the `_total` suffix (#7454)
+- `service`: use WithNamespace instead of WrapRegistererWithPrefix (#8988)
+  Using this functionality in the otel prom exporter fixes a bug where the
+  target_info was prefixed as otelcol_target_info previously.
+  
+
+### 💡 Enhancements 💡
+
+- `exporter/debug`: Change default `verbosity` from `normal` to `basic` (#8844)
+  This change has currently no effect, as `basic` and `normal` verbosity share the same behavior. This might change in the future though, with the `normal` verbosity being more verbose than it currently is (see https://github.com/open-telemetry/opentelemetry-collector/issues/7806). This is why we are changing the default to `basic`, which is expected to stay at the current level of verbosity (one line per batch).
+- `exporterhelper`: Fix shutdown logic in persistent queue to not require consumers to be closed first (#8899)
+- `confighttp`: Support proxy configuration field in all exporters that support confighttp (#5761)
+
+### 🧰 Bug fixes 🧰
+
+- `exporterhelper`: Fix invalid write index updates in the persistent queue (#8115)
+
+## v1.0.0-rcv0018/v0.89.0
+
+### 💡 Enhancements 💡
+
+- `builder`: remove replace statement in builder template (#8763)
+- `service/extensions`: Allow extensions to declare dependencies on other extensions and guarantee start/stop/notification order accordingly. (#8732)
+- `exporterhelper`: Log export errors when retry is not used by the component. (#8791)
+- `cmd/builder`: Add --verbose flag to log `go` subcommands output that are ran as part of a build (#8715)
+- `exporterhelper`: Remove internal goroutine loop for persistent queue (#8868)
+- `exporterhelper`: Simplify usage of storage client, avoid unnecessary allocations (#8830)
+- `exporterhelper`: Simplify logic in boundedMemoryQueue, use channels len/cap (#8829)
+
+### 🧰 Bug fixes 🧰
+
+- `exporterhelper`: fix bug with queue size and capacity metrics (#8682)
+- `obsreporttest`: split handler for otel vs oc test path in TestTelemetry (#8758)
+- `builder`: Fix featuregate late initialization (#4967)
+- `service`: Fix connector logger zap kind key (#8878)
+
+## v1.0.0-rcv0017/v0.88.0
+
+### 💡 Enhancements 💡
+
+- `fanoutconsumer`: Enable runtime assertions to catch incorrect pdata mutations in the components claiming as non-mutating pdata. (#6794)
+  This change enables the runtime assertions to catch unintentional pdata mutations in components that are claimed
+  as non-mutating pdata. Without these assertions, runtime errors may still occur, but thrown by unrelated components, 
+  making it very difficult to troubleshoot.
+  
+
+### 🧰 Bug fixes 🧰
+
+- `exporterhelper`: make enqueue failures available for otel metrics (#8673)
+- `exporterhelper`: Fix nil pointer dereference when stopping persistent queue after a start encountered an error (#8718)
+- `cmd/builder`: Fix ocb ignoring `otelcol_version` when set to v0.86.0 or later (#8692)
+
+## v1.0.0-rcv0016/v0.87.0
+
+### 💡 Enhancements 💡
+
+- `service/telemetry exporter/exporterhelper`: Enable sampling logging by default and apply it to all components. (#8134)
+  The sampled logger configuration can be disabled easily by setting the `service::telemetry::logs::sampling::enabled` to `false`.
+- `core`: Adds the ability for components to report status and for extensions to subscribe to status events by implementing an optional StatusWatcher interface. (#7682)
+
+### 🧰 Bug fixes 🧰
+
+- `telemetry`: remove workaround to ignore errors when an instrument includes a `/` (#8346)
+
+## v1.0.0-rcv0015/v0.86.0
+
+### 🚩 Deprecations 🚩
+
+- `loggingexporter`: Mark the logging exporter as deprecated, in favour of debug exporter (#7769)
+
+### 🚀 New components 🚀
+
+- `debugexporter`: Add debug exporter, which replaces the logging exporter (#7769)
+
+### 💡 Enhancements 💡
+
+- `featuregate`: List valid feature gates when failing to load invalid gate (#8505)
+- `supported platforms`: Add `linux/s390x` architecture to cross build tests in CI (#8213)
+
+### 🧰 Bug fixes 🧰
+
+- `builder`: fix setting `dist.*` keys from env (#8239)
+- `configtls`: fix incorrect use of fsnotify (#8438)
+
 ## v0.85.0
 
 ### 💡 Enhancements 💡

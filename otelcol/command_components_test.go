@@ -16,16 +16,15 @@ import (
 	"go.opentelemetry.io/collector/component"
 )
 
-func TestNewBuildSubCommand(t *testing.T) {
-	factories, err := nopFactories()
-	require.NoError(t, err)
+var nopType = component.MustNewType("nop")
 
+func TestNewBuildSubCommand(t *testing.T) {
 	cfgProvider, err := NewConfigProvider(newDefaultConfigProviderSettings([]string{filepath.Join("testdata", "otelcol-nop.yaml")}))
 	require.NoError(t, err)
 
 	set := CollectorSettings{
 		BuildInfo:      component.NewDefaultBuildInfo(),
-		Factories:      factories,
+		Factories:      nopFactories,
 		ConfigProvider: cfgProvider,
 	}
 	cmd := NewCommand(set)
@@ -34,7 +33,7 @@ func TestNewBuildSubCommand(t *testing.T) {
 	ExpectedYamlStruct := componentsOutput{
 		BuildInfo: component.NewDefaultBuildInfo(),
 		Receivers: []componentWithStability{{
-			Name: component.Type("nop"),
+			Name: nopType,
 			Stability: map[string]string{
 				"logs":    "Stable",
 				"metrics": "Stable",
@@ -42,7 +41,7 @@ func TestNewBuildSubCommand(t *testing.T) {
 			},
 		}},
 		Processors: []componentWithStability{{
-			Name: component.Type("nop"),
+			Name: nopType,
 			Stability: map[string]string{
 				"logs":    "Stable",
 				"metrics": "Stable",
@@ -50,7 +49,7 @@ func TestNewBuildSubCommand(t *testing.T) {
 			},
 		}},
 		Exporters: []componentWithStability{{
-			Name: component.Type("nop"),
+			Name: nopType,
 			Stability: map[string]string{
 				"logs":    "Stable",
 				"metrics": "Stable",
@@ -58,7 +57,7 @@ func TestNewBuildSubCommand(t *testing.T) {
 			},
 		}},
 		Connectors: []componentWithStability{{
-			Name: component.Type("nop"),
+			Name: nopType,
 			Stability: map[string]string{
 				"logs-to-logs":    "Development",
 				"logs-to-metrics": "Development",
@@ -74,7 +73,7 @@ func TestNewBuildSubCommand(t *testing.T) {
 			},
 		}},
 		Extensions: []componentWithStability{{
-			Name: component.Type("nop"),
+			Name: nopType,
 			Stability: map[string]string{
 				"extension": "Stable",
 			},

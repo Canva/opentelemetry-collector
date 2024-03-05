@@ -2,24 +2,25 @@ dist:
   module: go.opentelemetry.io/collector/cmd/otelcorecol
   name: otelcorecol
   description: Local OpenTelemetry Collector binary, testing only.
-  version: 0.85.0-dev
-  otelcol_version: 0.85.0
+  version: 0.96.0-dev
+  otelcol_version: 0.96.0
 
 receivers:
-  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.85.0
+  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.96.0
 exporters:
-  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.85.0
-  - gomod: go.opentelemetry.io/collector/exporter/loggingexporter v0.85.0
-  - gomod: go.opentelemetry.io/collector/exporter/otlpexporter v0.85.0
-  - gomod: go.opentelemetry.io/collector/exporter/otlphttpexporter v0.85.0
+  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.96.0
+  - gomod: go.opentelemetry.io/collector/exporter/loggingexporter v0.96.0
+  - gomod: go.opentelemetry.io/collector/exporter/otlpexporter v0.96.0
+  - gomod: go.opentelemetry.io/collector/exporter/otlphttpexporter v0.96.0
 extensions:
-  - gomod: go.opentelemetry.io/collector/extension/ballastextension v0.85.0
-  - gomod: go.opentelemetry.io/collector/extension/zpagesextension v0.85.0
+  - gomod: go.opentelemetry.io/collector/extension/ballastextension v0.96.0
+  - gomod: go.opentelemetry.io/collector/extension/memorylimiterextension v0.96.0
+  - gomod: go.opentelemetry.io/collector/extension/zpagesextension v0.96.0
 processors:
-  - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.85.0
-  - gomod: go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.85.0
+  - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.96.0
+  - gomod: go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.96.0
 connectors:
-  - gomod: go.opentelemetry.io/collector/connector/forwardconnector v0.85.0
+  - gomod: go.opentelemetry.io/collector/connector/forwardconnector v0.96.0
 
 replaces:
   - go.opentelemetry.io/collector => ../../
@@ -31,10 +32,17 @@ replaces:
   - go.opentelemetry.io/collector/config/confighttp => ../../config/confighttp
   - go.opentelemetry.io/collector/config/confignet => ../../config/confignet
   - go.opentelemetry.io/collector/config/configopaque => ../../config/configopaque
+  - go.opentelemetry.io/collector/config/configretry => ../../config/configretry
   - go.opentelemetry.io/collector/config/configtelemetry => ../../config/configtelemetry
   - go.opentelemetry.io/collector/config/configtls => ../../config/configtls
   - go.opentelemetry.io/collector/config/internal => ../../config/internal
   - go.opentelemetry.io/collector/confmap => ../../confmap
+  - go.opentelemetry.io/collector/confmap/converter/expandconverter => ../../confmap/converter/expandconverter
+  - go.opentelemetry.io/collector/confmap/provider/envprovider => ../../confmap/provider/envprovider
+  - go.opentelemetry.io/collector/confmap/provider/fileprovider => ../../confmap/provider/fileprovider
+  - go.opentelemetry.io/collector/confmap/provider/httpprovider => ../../confmap/provider/httpprovider
+  - go.opentelemetry.io/collector/confmap/provider/httpsprovider => ../../confmap/provider/httpsprovider
+  - go.opentelemetry.io/collector/confmap/provider/yamlprovider => ../../confmap/provider/yamlprovider
   - go.opentelemetry.io/collector/consumer => ../../consumer
   - go.opentelemetry.io/collector/connector => ../../connector
   - go.opentelemetry.io/collector/connector/forwardconnector => ../../connector/forwardconnector
@@ -46,6 +54,7 @@ replaces:
   - go.opentelemetry.io/collector/extension => ../../extension
   - go.opentelemetry.io/collector/extension/auth => ../../extension/auth
   - go.opentelemetry.io/collector/extension/ballastextension => ../../extension/ballastextension
+  - go.opentelemetry.io/collector/extension/memorylimiterextension => ../../extension/memorylimiterextension
   - go.opentelemetry.io/collector/extension/zpagesextension => ../../extension/zpagesextension
   - go.opentelemetry.io/collector/featuregate => ../../featuregate
   - go.opentelemetry.io/collector/pdata => ../../pdata

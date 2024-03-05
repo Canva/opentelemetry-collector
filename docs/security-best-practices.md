@@ -148,6 +148,8 @@ receivers:
 Generally, `localhost`-like addresses should be preferred over the 0.0.0.0 address.
 For more information, see [CWE-1327](https://cwe.mitre.org/data/definitions/1327.html).
 
+To change the default endpoint to be `localhost`-bound in all components, enable the `component.UseLocalHostAsDefaultHost` feature gate. This feature gate will be enabled by default in the Collector in a future release.
+
 ## Processors
 
 Processors sit between receivers and exporters. They are responsible for
@@ -169,7 +171,7 @@ scrub sensitive data before exporting.
 
 In addition, processors offer safeguards around resource utilization. The
 `batch` and especially `memory_limiter` processor help ensure that the
-Collector is resource efficient and does not out of memory when overloaded. At
+Collector is resource efficient and does not run out of memory when overloaded. At
 least these two processors SHOULD be enabled on every defined pipeline.
 
 > For more information on recommended processors and order, see

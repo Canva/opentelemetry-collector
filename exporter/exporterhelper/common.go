@@ -5,70 +5,41 @@ package exporterhelper // import "go.opentelemetry.io/collector/exporter/exporte
 
 import (
 	"context"
-	"time"
 
+	"go.uber.org/multierr"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/exporter"
-	"go.opentelemetry.io/collector/exporter/exporterhelper/internal"
+	"go.opentelemetry.io/collector/exporter/exporterqueue"
 )
 
 // requestSender is an abstraction of a sender for a request independent of the type of the data (traces, metrics, logs).
 type requestSender interface {
-	start(ctx context.Context, host component.Host, set exporter.CreateSettings) error
-	shutdown()
-	send(req internal.Request) error
+	component.Component
+	send(context.Context, Request) error
 	setNextSender(nextSender requestSender)
 }
 
 type baseRequestSender struct {
+	component.StartFunc
+	component.ShutdownFunc
 	nextSender requestSender
 }
 
 var _ requestSender = (*baseRequestSender)(nil)
 
-func (b *baseRequestSender) start(context.Context, component.Host, exporter.CreateSettings) error {
-	return nil
-}
-
-func (b *baseRequestSender) shutdown() {}
-
-func (b *baseRequestSender) send(req internal.Request) error {
-	return b.nextSender.send(req)
+func (b *baseRequestSender) send(ctx context.Context, req Request) error {
+	return b.nextSender.send(ctx, req)
 }
 
 func (b *baseRequestSender) setNextSender(nextSender requestSender) {
 	b.nextSender = nextSender
 }
 
-type obsrepSenderFactory func(obsrep *obsExporter) requestSender
-
-// baseRequest is a base implementation for the internal.Request.
-type baseRequest struct {
-	ctx                        context.Context
-	processingFinishedCallback func()
-}
-
-func (req *baseRequest) Context() context.Context {
-	return req.ctx
-}
-
-func (req *baseRequest) SetContext(ctx context.Context) {
-	req.ctx = ctx
-}
-
-func (req *baseRequest) SetOnProcessingFinished(callback func()) {
-	req.processingFinishedCallback = callback
-}
-
-func (req *baseRequest) OnProcessingFinished() {
-	if req.processingFinishedCallback != nil {
-		req.processingFinishedCallback()
-	}
-}
+type obsrepSenderFactory func(obsrep *ObsReport) requestSender
 
 // Option apply changes to baseExporter.
 type Option func(*baseExporter)
@@ -97,11 +68,15 @@ func WithTimeout(timeoutSettings TimeoutSettings) Option {
 	}
 }
 
-// WithRetry overrides the default RetrySettings for an exporter.
-// The default RetrySettings is to disable retries.
-func WithRetry(retrySettings RetrySettings) Option {
+// WithRetry overrides the default configretry.BackOffConfig for an exporter.
+// The default configretry.BackOffConfig is to disable retries.
+func WithRetry(config configretry.BackOffConfig) Option {
 	return func(o *baseExporter) {
-		o.retrySender = newRetrySender(o.set.ID, retrySettings, o.sampledLogger, o.onTemporaryFailure)
+		if !config.Enabled {
+			o.exportFailureMessage += " Try enabling retry_on_failure config option to retry on retryable errors."
+			return
+		}
+		o.retrySender = newRetrySender(config, o.set)
 	}
 }
 
@@ -110,20 +85,47 @@ func WithRetry(retrySettings RetrySettings) Option {
 // This option cannot be used with the new exporter helpers New[Traces|Metrics|Logs]RequestExporter.
 func WithQueue(config QueueSettings) Option {
 	return func(o *baseExporter) {
-		if o.requestExporter {
-			panic("queueing is not available for the new request exporters yet")
+		if o.marshaler == nil || o.unmarshaler == nil {
+			panic("WithQueue option is not available for the new request exporters, use WithRequestQueue instead")
 		}
-		var queue internal.ProducerConsumerQueue
-		if config.Enabled {
-			if config.StorageID == nil {
-				queue = internal.NewBoundedMemoryQueue(config.QueueSize, config.NumConsumers)
-			} else {
-				queue = internal.NewPersistentQueue(config.QueueSize, config.NumConsumers, *config.StorageID, o.marshaler, o.unmarshaler)
-			}
+		if !config.Enabled {
+			o.exportFailureMessage += " Try enabling sending_queue to survive temporary failures."
+			return
 		}
-		qs := newQueueSender(o.set.ID, o.signal, queue, o.sampledLogger)
-		o.queueSender = qs
-		o.setOnTemporaryFailure(qs.onTemporaryFailure)
+		qf := exporterqueue.NewPersistentQueueFactory[Request](config.StorageID, exporterqueue.PersistentQueueSettings[Request]{
+			Marshaler:   o.marshaler,
+			Unmarshaler: o.unmarshaler,
+		})
+		q := qf(context.Background(), exporterqueue.Settings{
+			DataType:         o.signal,
+			ExporterSettings: o.set,
+		}, exporterqueue.Config{
+			Enabled:      config.Enabled,
+			NumConsumers: config.NumConsumers,
+			QueueSize:    config.QueueSize,
+		})
+		o.queueSender = newQueueSender(q, o.set, config.NumConsumers, o.exportFailureMessage)
+	}
+}
+
+// WithRequestQueue enables queueing for an exporter.
+// This option should be used with the new exporter helpers New[Traces|Metrics|Logs]RequestExporter.
+// This API is at the early stage of development and may change without backward compatibility
+// until https://github.com/open-telemetry/opentelemetry-collector/issues/8122 is resolved.
+func WithRequestQueue(cfg exporterqueue.Config, queueFactory exporterqueue.Factory[Request]) Option {
+	return func(o *baseExporter) {
+		if o.marshaler != nil || o.unmarshaler != nil {
+			panic("WithRequestQueue option must be used with the new request exporters only, use WithQueue instead")
+		}
+		if !cfg.Enabled {
+			o.exportFailureMessage += " Try enabling sending_queue to survive temporary failures."
+			return
+		}
+		set := exporterqueue.Settings{
+			DataType:         o.signal,
+			ExporterSettings: o.set,
+		}
+		o.queueSender = newQueueSender(queueFactory(context.Background(), set, cfg), o.set, cfg.NumConsumers, o.exportFailureMessage)
 	}
 }
 
@@ -136,19 +138,36 @@ func WithCapabilities(capabilities consumer.Capabilities) Option {
 	}
 }
 
+// withMarshaler is used to set the request marshaler for the new exporter helper.
+// It must be provided as the first option when creating a new exporter helper.
+func withMarshaler(marshaler exporterqueue.Marshaler[Request]) Option {
+	return func(o *baseExporter) {
+		o.marshaler = marshaler
+	}
+}
+
+// withUnmarshaler is used to set the request unmarshaler for the new exporter helper.
+// It must be provided as the first option when creating a new exporter helper.
+func withUnmarshaler(unmarshaler exporterqueue.Unmarshaler[Request]) Option {
+	return func(o *baseExporter) {
+		o.unmarshaler = unmarshaler
+	}
+}
+
 // baseExporter contains common fields between different exporter types.
 type baseExporter struct {
 	component.StartFunc
 	component.ShutdownFunc
 
-	requestExporter bool
-	marshaler       internal.RequestMarshaler
-	unmarshaler     internal.RequestUnmarshaler
-	signal          component.DataType
+	marshaler   exporterqueue.Marshaler[Request]
+	unmarshaler exporterqueue.Unmarshaler[Request]
+	signal      component.DataType
 
-	set           exporter.CreateSettings
-	obsrep        *obsExporter
-	sampledLogger *zap.Logger
+	set    exporter.CreateSettings
+	obsrep *ObsReport
+
+	// Message for the user to be added with an export failure message.
+	exportFailureMessage string
 
 	// Chain of senders that the exporter helper applies before passing the data to the actual exporter.
 	// The data is handled by each sender in the respective order starting from the queueSender.
@@ -158,35 +177,25 @@ type baseExporter struct {
 	retrySender   requestSender
 	timeoutSender *timeoutSender // timeoutSender is always initialized.
 
-	// onTemporaryFailure is a function that is called when the retrySender is unable to send data to the next consumer.
-	onTemporaryFailure onRequestHandlingFinishedFunc
-
 	consumerOptions []consumer.Option
 }
 
-// TODO: requestExporter, marshaler, and unmarshaler arguments can be removed when the old exporter helpers will be updated to call the new ones.
-func newBaseExporter(set exporter.CreateSettings, signal component.DataType, requestExporter bool, marshaler internal.RequestMarshaler,
-	unmarshaler internal.RequestUnmarshaler, osf obsrepSenderFactory, options ...Option) (*baseExporter, error) {
-
-	obsrep, err := newObsExporter(ObsReportSettings{ExporterID: set.ID, ExporterCreateSettings: set}, globalInstruments)
+func newBaseExporter(set exporter.CreateSettings, signal component.DataType, osf obsrepSenderFactory, options ...Option) (*baseExporter, error) {
+	obsReport, err := NewObsReport(ObsReportSettings{ExporterID: set.ID, ExporterCreateSettings: set})
 	if err != nil {
 		return nil, err
 	}
 
 	be := &baseExporter{
-		requestExporter: requestExporter,
-		marshaler:       marshaler,
-		unmarshaler:     unmarshaler,
-		signal:          signal,
+		signal: signal,
 
 		queueSender:   &baseRequestSender{},
-		obsrepSender:  osf(obsrep),
+		obsrepSender:  osf(obsReport),
 		retrySender:   &baseRequestSender{},
 		timeoutSender: &timeoutSender{cfg: NewDefaultTimeoutSettings()},
 
-		set:           set,
-		obsrep:        obsrep,
-		sampledLogger: createSampledLogger(set.Logger),
+		set:    set,
+		obsrep: obsReport,
 	}
 
 	for _, op := range options {
@@ -198,8 +207,13 @@ func newBaseExporter(set exporter.CreateSettings, signal component.DataType, req
 }
 
 // send sends the request using the first sender in the chain.
-func (be *baseExporter) send(req internal.Request) error {
-	return be.queueSender.send(req)
+func (be *baseExporter) send(ctx context.Context, req Request) error {
+	err := be.queueSender.send(ctx, req)
+	if err != nil {
+		be.set.Logger.Error("Exporting failed. Rejecting data."+be.exportFailureMessage,
+			zap.Error(err), zap.Int("rejected_items", req.ItemsCount()))
+	}
+	return err
 }
 
 // connectSenders connects the senders in the predefined order.
@@ -216,42 +230,15 @@ func (be *baseExporter) Start(ctx context.Context, host component.Host) error {
 	}
 
 	// If no error then start the queueSender.
-	return be.queueSender.start(ctx, host, be.set)
+	return be.queueSender.Start(ctx, host)
 }
 
 func (be *baseExporter) Shutdown(ctx context.Context) error {
-	// First shutdown the retry sender, so it can push any pending requests to back the queue.
-	be.retrySender.shutdown()
-
-	// Then shutdown the queue sender.
-	be.queueSender.shutdown()
-
-	// Last shutdown the wrapped exporter itself.
-	return be.ShutdownFunc.Shutdown(ctx)
-}
-
-func (be *baseExporter) setOnTemporaryFailure(onTemporaryFailure onRequestHandlingFinishedFunc) {
-	be.onTemporaryFailure = onTemporaryFailure
-	if rs, ok := be.retrySender.(*retrySender); ok {
-		rs.onTemporaryFailure = onTemporaryFailure
-	}
-}
-
-func createSampledLogger(logger *zap.Logger) *zap.Logger {
-	if logger.Core().Enabled(zapcore.DebugLevel) {
-		// Debugging is enabled. Don't do any sampling.
-		return logger
-	}
-
-	// Create a logger that samples all messages to 1 per 10 seconds initially,
-	// and 1/100 of messages after that.
-	opts := zap.WrapCore(func(core zapcore.Core) zapcore.Core {
-		return zapcore.NewSamplerWithOptions(
-			core,
-			10*time.Second,
-			1,
-			100,
-		)
-	})
-	return logger.WithOptions(opts)
+	return multierr.Combine(
+		// First shutdown the retry sender, so the queue sender can flush the queue without retries.
+		be.retrySender.Shutdown(ctx),
+		// Then shutdown the queue sender.
+		be.queueSender.Shutdown(ctx),
+		// Last shutdown the wrapped exporter itself.
+		be.ShutdownFunc.Shutdown(ctx))
 }

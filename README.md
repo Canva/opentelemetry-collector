@@ -23,6 +23,8 @@
   <a href="https://github.com/open-telemetry/opentelemetry-collector/releases">
     <img alt="GitHub release (latest by date including pre-releases)" src="https://img.shields.io/github/v/release/open-telemetry/opentelemetry-collector?include_prereleases&style=for-the-badge">
   </a>
+  <a href="https://www.bestpractices.dev/projects/8404"><img src="https://www.bestpractices.dev/projects/8404/badge">
+  </a> 
 </p>
 
 <p align="center">
@@ -35,11 +37,7 @@
     &nbsp;&nbsp;&bull;&nbsp;&nbsp;
     <a href="docs/monitoring.md">Monitoring</a>
     &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-    <a href="docs/performance.md">Performance</a>
-    &nbsp;&nbsp;&bull;&nbsp;&nbsp;
     <a href="docs/security-best-practices.md">Security</a>
-    &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-    <a href="docs/roadmap.md">Roadmap</a>
     &nbsp;&nbsp;&bull;&nbsp;&nbsp;
     <a href="https://pkg.go.dev/go.opentelemetry.io/collector">Package</a>
   </strong>
@@ -62,6 +60,13 @@ Objectives:
 - Observable: An exemplar of an observable service.
 - Extensible: Customizable without touching the core code.
 - Unified: Single codebase, deployable as an agent or collector with support for traces, metrics and logs.
+
+## Supported OTLP version
+
+This code base is currently built against using OTLP protocol v1.1.0,
+considered Stable. [See the OpenTelemetry Protocol Stability
+definition
+here.](https://github.com/open-telemetry/opentelemetry-proto?tab=readme-ov-file#stability-definition)
 
 ## Stability levels
 
@@ -100,7 +105,7 @@ A component identified as unmaintained does not have an active code owner. Such 
 When used as a library, the OpenTelemetry Collector attempts to track the currently supported versions of Go, as [defined by the Go team](https://go.dev/doc/devel/release#policy).
 Removing support for an unsupported Go version is not considered a breaking change.
 
-Starting with the release of Go 1.18, support for Go versions on the OpenTelemetry Collector will be updated as follows:
+Support for Go versions on the OpenTelemetry Collector is updated as follows:
 
 1. The first release after the release of a new Go minor version `N` will add build and tests steps for the new Go minor version.
 2. The first release after the release of a new Go minor version `N` will remove support for Go version `N-2`.
@@ -117,6 +122,9 @@ Here is a list of community roles with current and previous members:
 
   - [Andrzej Stencel](https://github.com/astencel-sumo), Sumo Logic
   - [Antoine Toulme](https://github.com/atoulme), Splunk
+  - [Evan Bradley](https://github.com/evan-bradley), Dynatrace
+  - [Tyler Helmuth](https://github.com/TylerHelmuth), Honeycomb
+  - [Yang Song](https://github.com/songy23), Datadog
   - Actively seeking contributors to triage issues
 
 - Emeritus Triagers:
@@ -131,7 +139,6 @@ Here is a list of community roles with current and previous members:
    - [Anthony Mirabella](https://github.com/Aneurysm9), AWS
    - [Daniel Jaglowski](https://github.com/djaglowski), observIQ
    - [Juraci Paixão Kröhling](https://github.com/jpkrohling), Grafana Labs
-   - [Pablo Baeyens](https://github.com/mx-psi), DataDog
 
 - Emeritus Approvers:
 
@@ -141,13 +148,13 @@ Here is a list of community roles with current and previous members:
    - [Owais Lone](https://github.com/owais), Splunk
    - [Rahul Patel](https://github.com/rghetia), Google
    - [Steven Karis](https://github.com/sjkaris), Splunk
-   - [Yang Song](https://github.com/songy23), Google
 
 - Maintainers ([@open-telemetry/collector-maintainers](https://github.com/orgs/open-telemetry/teams/collector-maintainers)):
 
-   - [Alex Boten](https://github.com/codeboten), Lightstep
-   - [Bogdan Drutu](https://github.com/BogdanDrutu), Splunk
+   - [Alex Boten](https://github.com/codeboten), Honeycomb
+   - [Bogdan Drutu](https://github.com/BogdanDrutu), Snowflake
    - [Dmitrii Anoshin](https://github.com/dmitryax), Splunk
+   - [Pablo Baeyens](https://github.com/mx-psi), DataDog
 
 - Emeritus Maintainers:
 
