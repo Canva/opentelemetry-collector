@@ -5,8 +5,11 @@ package confmap // import "go.opentelemetry.io/collector/confmap"
 
 import (
 	"encoding"
+	"errors"
 	"fmt"
 	"reflect"
+	"slices"
+	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/knadh/koanf/maps"
@@ -157,14 +160,24 @@ func decodeConfig(m *Conf, result any, errorUnused bool) error {
 			mapstructure.StringToTimeDurationHookFunc(),
 			mapstructure.TextUnmarshallerHookFunc(),
 			unmarshalerHookFunc(result),
+			// after the main unmarshaler hook is called,
+			// we unmarshal the embedded structs if present to merge with the result:
+			unmarshalerEmbeddedStructsHookFunc(),
 			zeroSliceHookFunc(),
+			negativeUintHookFunc(),
 		),
 	}
 	decoder, err := mapstructure.NewDecoder(dc)
 	if err != nil {
 		return err
 	}
-	return decoder.Decode(m.ToStringMap())
+	if err = decoder.Decode(m.ToStringMap()); err != nil {
+		if strings.HasPrefix(err.Error(), "error decoding ''") {
+			return errors.Unwrap(err)
+		}
+		return err
+	}
+	return nil
 }
 
 // encoderConfig returns a default encoder.EncoderConfig that includes
@@ -232,32 +245,74 @@ func expandNilStructPointersHookFunc() mapstructure.DecodeHookFuncValue {
 // This is needed in combination with ComponentID, which may produce equal IDs for different strings,
 // and an error needs to be returned in that case, otherwise the last equivalent ID overwrites the previous one.
 func mapKeyStringToMapKeyTextUnmarshalerHookFunc() mapstructure.DecodeHookFuncType {
-	return func(f reflect.Type, t reflect.Type, data any) (any, error) {
-		if f.Kind() != reflect.Map || f.Key().Kind() != reflect.String {
+	return func(from reflect.Type, to reflect.Type, data any) (any, error) {
+		if from.Kind() != reflect.Map || from.Key().Kind() != reflect.String {
 			return data, nil
 		}
 
-		if t.Kind() != reflect.Map {
+		if to.Kind() != reflect.Map {
 			return data, nil
 		}
 
-		if _, ok := reflect.New(t.Key()).Interface().(encoding.TextUnmarshaler); !ok {
+		// Checks that the key type of to implements the TextUnmarshaler interface.
+		if _, ok := reflect.New(to.Key()).Interface().(encoding.TextUnmarshaler); !ok {
 			return data, nil
 		}
 
-		m := reflect.MakeMap(reflect.MapOf(t.Key(), reflect.TypeOf(true)))
+		// Create a map with key value of to's key to bool.
+		fieldNameSet := reflect.MakeMap(reflect.MapOf(to.Key(), reflect.TypeOf(true)))
 		for k := range data.(map[string]any) {
-			tKey := reflect.New(t.Key())
+			// Create a new value of the to's key type.
+			tKey := reflect.New(to.Key())
+
+			// Use tKey to unmarshal the key of the map.
 			if err := tKey.Interface().(encoding.TextUnmarshaler).UnmarshalText([]byte(k)); err != nil {
 				return nil, err
 			}
-
-			if m.MapIndex(reflect.Indirect(tKey)).IsValid() {
+			// Checks if the key has already been decoded in a previous iteration.
+			if fieldNameSet.MapIndex(reflect.Indirect(tKey)).IsValid() {
 				return nil, fmt.Errorf("duplicate name %q after unmarshaling %v", k, tKey)
 			}
-			m.SetMapIndex(reflect.Indirect(tKey), reflect.ValueOf(true))
+			fieldNameSet.SetMapIndex(reflect.Indirect(tKey), reflect.ValueOf(true))
 		}
 		return data, nil
+	}
+}
+
+// unmarshalerEmbeddedStructsHookFunc provides a mechanism for embedded structs to define their own unmarshal logic,
+// by implementing the Unmarshaler interface.
+func unmarshalerEmbeddedStructsHookFunc() mapstructure.DecodeHookFuncValue {
+	return func(from reflect.Value, to reflect.Value) (any, error) {
+		if to.Type().Kind() != reflect.Struct {
+			return from.Interface(), nil
+		}
+		fromAsMap, ok := from.Interface().(map[string]any)
+		if !ok {
+			return from.Interface(), nil
+		}
+		for i := 0; i < to.Type().NumField(); i++ {
+			// embedded structs passed in via `squash` cannot be pointers. We just check if they are structs:
+			f := to.Type().Field(i)
+			if f.IsExported() && slices.Contains(strings.Split(f.Tag.Get("mapstructure"), ","), "squash") {
+				if unmarshaler, ok := to.Field(i).Addr().Interface().(Unmarshaler); ok {
+					if err := unmarshaler.Unmarshal(NewFromStringMap(fromAsMap)); err != nil {
+						return nil, err
+					}
+					// the struct we receive from this unmarshaling only contains fields related to the embedded struct.
+					// we merge this partially unmarshaled struct with the rest of the result.
+					// note we already unmarshaled the main struct earlier, and therefore merge with it.
+					conf := New()
+					if err := conf.Marshal(unmarshaler); err != nil {
+						return nil, err
+					}
+					resultMap := conf.ToStringMap()
+					for k, v := range resultMap {
+						fromAsMap[k] = v
+					}
+				}
+			}
+		}
+		return fromAsMap, nil
 	}
 }
 
@@ -366,5 +421,38 @@ func zeroSliceHookFunc() mapstructure.DecodeHookFuncValue {
 		}
 
 		return from.Interface(), nil
+	}
+}
+
+// This hook is used to solve the issue: https://github.com/open-telemetry/opentelemetry-collector/issues/9060
+// Decoding should fail when converting a negative integer to any type of unsigned integer. This prevents
+// negative values being decoded as large uint values.
+// TODO: This should be removed as a part of https://github.com/open-telemetry/opentelemetry-collector/issues/9532
+func negativeUintHookFunc() mapstructure.DecodeHookFuncValue {
+	return func(from reflect.Value, to reflect.Value) (interface{}, error) {
+		if from.CanInt() && from.Int() < 0 && to.CanUint() {
+			return nil, fmt.Errorf("cannot convert negative value %v to an unsigned integer", from.Int())
+		}
+		return from.Interface(), nil
+	}
+}
+
+type moduleFactory[T any, S any] interface {
+	Create(s S) T
+}
+
+type createConfmapFunc[T any, S any] func(s S) T
+
+type confmapModuleFactory[T any, S any] struct {
+	f createConfmapFunc[T, S]
+}
+
+func (c confmapModuleFactory[T, S]) Create(s S) T {
+	return c.f(s)
+}
+
+func newConfmapModuleFactory[T any, S any](f createConfmapFunc[T, S]) moduleFactory[T, S] {
+	return confmapModuleFactory[T, S]{
+		f: f,
 	}
 }

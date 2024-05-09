@@ -8,16 +8,15 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	"go.uber.org/multierr"
 
+	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configtelemetry"
 	"go.opentelemetry.io/collector/internal/obsreportconfig/obsmetrics"
 	"go.opentelemetry.io/collector/processor"
+	"go.opentelemetry.io/collector/processor/batchprocessor/internal/metadata"
 	"go.opentelemetry.io/collector/processor/processorhelper"
-)
-
-const (
-	scopeName = "go.opentelemetry.io/collector/processor/batchprocessor"
 )
 
 type trigger int
@@ -50,16 +49,25 @@ func newBatchProcessorTelemetry(set processor.CreateSettings, currentMetadataCar
 		detailed:      set.MetricsLevel == configtelemetry.LevelDetailed,
 	}
 
-	if err := bpt.createOtelMetrics(set.MeterProvider, currentMetadataCardinality); err != nil {
+	if err := bpt.createOtelMetrics(set.TelemetrySettings, currentMetadataCardinality); err != nil {
 		return nil, err
 	}
 
 	return bpt, nil
 }
 
-func (bpt *batchProcessorTelemetry) createOtelMetrics(mp metric.MeterProvider, currentMetadataCardinality func() int) error {
-	var errors, err error
-	meter := mp.Meter(scopeName)
+func (bpt *batchProcessorTelemetry) createOtelMetrics(set component.TelemetrySettings, currentMetadataCardinality func() int) error {
+	var (
+		errors, err error
+		meter       metric.Meter
+	)
+
+	// BatchProcessor are emitted starting from Normal level only.
+	if bpt.level >= configtelemetry.LevelNormal {
+		meter = metadata.Meter(set)
+	} else {
+		meter = noopmetric.Meter{}
+	}
 
 	bpt.batchSizeTriggerSend, err = meter.Int64Counter(
 		processorhelper.BuildCustomMetricName(typeStr, "batch_size_trigger_send"),

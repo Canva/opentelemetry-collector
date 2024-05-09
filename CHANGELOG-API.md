@@ -7,6 +7,86 @@ If you are looking for user-facing changes, check out [CHANGELOG.md](./CHANGELOG
 
 <!-- next version -->
 
+## v1.7.0/v0.100.0
+
+### 💡 Enhancements 💡
+
+- `configgrpc`: Adds `NewDefault*` functions for all the config structs. (#9654)
+- `exporterqueue`: Expose ErrQueueIsFull so upstream components can retry or apply backpressure. (#10070)
+
+### 🧰 Bug fixes 🧰
+
+- `mdatagen`: Call connectors with routers to be the same as the service graph (#10079)
+
+## v1.6.0/v0.99.0
+
+### 🛑 Breaking changes 🛑
+
+- `component`: Removed deprecated function `GetExporters` from `component.Host` interface (#9987)
+
+### 🚩 Deprecations 🚩
+
+- `confighttp`: deprecate ToClientContext, ToServerContext, ToListenerContext, replaced by ToClient, ToServer, ToListener (#9807)
+- `configtls`: Deprecates `ClientConfig.LoadTLSConfigContext` and `ServerConfig.LoadTLSConfigContext`, use `ClientConfig.LoadTLSConfig` and `ServerConfig.LoadTLSConfig` instead. (#9945)
+
+### 💡 Enhancements 💡
+
+- `configauth`: Adds `NewDefault*` functions for all the config structs. (#9821)
+- `configtls`: Adds `NewDefault*` functions for all the config structs. (#9658)
+- `pmetric`: Support metric.metadata in pdata/pmetric (#10006)
+
+## v1.5.0/v0.98.0
+
+### 🛑 Breaking changes 🛑
+
+- `component`: Restricts maximum length for `component.Type` to 63 characters. (#9872)
+- `configgrpc`: Remove deprecated `ToServerContext`, use `ToServer` instead. (#9836)
+- `configgrpc`: Remove deprecated `SanitizedEndpoint`. (#9836)
+- `configtls`: Remove Deprecated `TLSSetting`, `TLSClientSetting`, and `TLSServerSetting`. (#9786)
+- `configtls`: Rename `TLSSetting` to `Config` on `ClientConfig` and `ServerConfig`. (#9786)
+
+### 🚩 Deprecations 🚩
+
+- `confighttp`: Deprecate `ToClient`,`ToListener`and `ToServer` use `ToClientContext`,`ToListenerContext` and `ToServerContext`instead. (#9807)
+- `configtls`: Deprecate `ClientConfig.LoadTLSConfig` and `ServerConfig.LoadTLSConfig`, use `ClientConfig.LoadTLSConfigContext` and `ServerConfig.LoadTLSConfigContext` instead. (#9811)
+
+### 💡 Enhancements 💡
+
+- Introduce new module for generating pdata: pdata/testdata (#9886)
+- `exporterhelper`: Make the `WithBatcher` option available for regular exporter helpers based on OTLP data type. (#8122)
+  Now, `WithBatcher` can be used with both regular exporter helper (e.g. NewTracesExporter) and the request-based exporter 
+  helper (e.g. NewTracesRequestExporter). The request-based exporter helpers require `WithRequestBatchFuncs` option 
+  providing batching functions. 
+  
+- `confmap`: Creates a logger in the confmap.ProviderSettings and uses it to log when there is a missing or blank environment variable referenced in config. For now the noop logger is used everywhere except tests. (#5615)
+
+## v1.4.0/v0.97.0
+
+### 🛑 Breaking changes 🛑
+
+- `configgrpc`: Remove deprecated `ToServer` function. (#9787)
+- `confignet`: Change `Transport` field from `string` to `TransportType` (#9385)
+- `component`: Change underlying type of `component.Type` to an opaque struct. (#9208)
+- `obsreport`: Remove deprecated obsreport/obsreporttest package. (#9724)
+- `component`: Remove deprecated error `ErrNilNextConsumer` (#9322)
+- `connector`: Remove `LogsRouter`, `MetricsRouter` and `TracesRouter`. Use `LogsRouterAndConsumer`, `MetricsRouterAndConsumer`, `TracesRouterAndConsumer` respectively instead. (#9095)
+- `receiver`: Remove deprecated struct `ScraperControllerSettings` and function `NewDefaultScraperControllerSettings` (#6767)
+- `confmap`: Remove deprecated `provider.New` methods, use `NewWithSettings` moving forward. (#9443)
+
+### 🚩 Deprecations 🚩
+
+- `configgrpc`: Deprecated `ToServerContext`, use `ToServer` instead. (#9787)
+- `configgrpc`: Deprecate `SanitizedEndpoint` (#9788)
+
+### 💡 Enhancements 💡
+
+- `exporterhelper`: Add experimental batching capabilities to the exporter helper (#8122)
+- `confignet`: Adds `NewDefault*` functions for all the config structs. (#9656)
+- `configtls`: Validates TLS min_version and max_version (#9475)
+  Introduces `Validate()` method in TLSSetting.
+- `exporterhelper`: Invalid exporterhelper options now make the exporter creation error out instead of panicking. (#9717)
+- `components`: Give NoOp components a unique name (#9637)
+
 ## v1.3.0/v0.96.0
 
 ### 🚩 Deprecations 🚩

@@ -138,7 +138,7 @@ endif
 # Build the Collector executable.
 .PHONY: otelcorecol
 otelcorecol:
-	pushd cmd/otelcorecol && GO111MODULE=on CGO_ENABLED=0 $(GOCMD) build -trimpath -o ../../bin/otelcorecol_$(GOOS)_$(GOARCH) \
+	pushd cmd/otelcorecol && CGO_ENABLED=0 $(GOCMD) build -trimpath -o ../../bin/otelcorecol_$(GOOS)_$(GOARCH) \
 		-tags $(GO_BUILD_TAGS) ./cmd/otelcorecol && popd
 
 .PHONY: genotelcorecol
@@ -157,7 +157,7 @@ ocb:
 OPENTELEMETRY_PROTO_SRC_DIR=pdata/internal/opentelemetry-proto
 
 # The branch matching the current version of the proto to use
-OPENTELEMETRY_PROTO_VERSION=v1.1.0
+OPENTELEMETRY_PROTO_VERSION=v1.2.0
 
 # Find all .proto files.
 OPENTELEMETRY_PROTO_FILES := $(subst $(OPENTELEMETRY_PROTO_SRC_DIR)/,,$(wildcard $(OPENTELEMETRY_PROTO_SRC_DIR)/opentelemetry/proto/*/v1/*.proto $(OPENTELEMETRY_PROTO_SRC_DIR)/opentelemetry/proto/collector/*/v1/*.proto))
@@ -237,6 +237,7 @@ gensemconv: $(SEMCONVGEN) $(SEMCONVKIT)
 	$(SEMCONVGEN) -o semconv/${SPECTAG} -t semconv/template.j2 -s ${SPECTAG} -i ${SPECPATH}/model/. --only=resource -p conventionType=resource -f generated_resource.go
 	$(SEMCONVGEN) -o semconv/${SPECTAG} -t semconv/template.j2 -s ${SPECTAG} -i ${SPECPATH}/model/. --only=event -p conventionType=event -f generated_event.go
 	$(SEMCONVGEN) -o semconv/${SPECTAG} -t semconv/template.j2 -s ${SPECTAG} -i ${SPECPATH}/model/. --only=span -p conventionType=trace -f generated_trace.go
+	$(SEMCONVGEN) -o semconv/${SPECTAG} -t semconv/template.j2 -s ${SPECTAG} -i ${SPECPATH}/model/. --only=attribute_group -p conventionType=attribute_group -f generated_attribute_group.go
 	$(SEMCONVKIT) -output "semconv/$(SPECTAG)" -tag "$(SPECTAG)"
 
 # Checks that the HEAD of the contrib repo checked out in CONTRIB_PATH compiles
@@ -270,6 +271,7 @@ check-contrib:
 		-replace go.opentelemetry.io/collector/exporter=$(CURDIR)/exporter  \
 		-replace go.opentelemetry.io/collector/exporter/debugexporter=$(CURDIR)/exporter/debugexporter  \
 		-replace go.opentelemetry.io/collector/exporter/loggingexporter=$(CURDIR)/exporter/loggingexporter  \
+		-replace go.opentelemetry.io/collector/exporter/nopexporter=$(CURDIR)/exporter/nopexporter  \
 		-replace go.opentelemetry.io/collector/exporter/otlpexporter=$(CURDIR)/exporter/otlpexporter  \
 		-replace go.opentelemetry.io/collector/exporter/otlphttpexporter=$(CURDIR)/exporter/otlphttpexporter  \
 		-replace go.opentelemetry.io/collector/extension=$(CURDIR)/extension  \
@@ -280,10 +282,12 @@ check-contrib:
 		-replace go.opentelemetry.io/collector/featuregate=$(CURDIR)/featuregate  \
 		-replace go.opentelemetry.io/collector/otelcol=$(CURDIR)/otelcol  \
 		-replace go.opentelemetry.io/collector/pdata=$(CURDIR)/pdata  \
+		-replace go.opentelemetry.io/collector/pdata/testdata=$(CURDIR)/pdata/testdata  \
 		-replace go.opentelemetry.io/collector/processor=$(CURDIR)/processor  \
 		-replace go.opentelemetry.io/collector/processor/batchprocessor=$(CURDIR)/processor/batchprocessor  \
 		-replace go.opentelemetry.io/collector/processor/memorylimiterprocessor=$(CURDIR)/processor/memorylimiterprocessor  \
 		-replace go.opentelemetry.io/collector/receiver=$(CURDIR)/receiver  \
+		-replace go.opentelemetry.io/collector/receiver/nopreceiver=$(CURDIR)/receiver/nopreceiver  \
 		-replace go.opentelemetry.io/collector/receiver/otlpreceiver=$(CURDIR)/receiver/otlpreceiver  \
 		-replace go.opentelemetry.io/collector/semconv=$(CURDIR)/semconv  \
 		-replace go.opentelemetry.io/collector/service=$(CURDIR)/service"
@@ -323,6 +327,7 @@ restore-contrib:
 		-dropreplace go.opentelemetry.io/collector/exporter  \
 		-dropreplace go.opentelemetry.io/collector/exporter/debugexporter  \
 		-dropreplace go.opentelemetry.io/collector/exporter/loggingexporter  \
+		-dropreplace go.opentelemetry.io/collector/exporter/nopexporter  \
 		-dropreplace go.opentelemetry.io/collector/exporter/otlpexporter  \
 		-dropreplace go.opentelemetry.io/collector/exporter/otlphttpexporter  \
 		-dropreplace go.opentelemetry.io/collector/extension  \
@@ -333,10 +338,12 @@ restore-contrib:
 		-dropreplace go.opentelemetry.io/collector/featuregate  \
 		-dropreplace go.opentelemetry.io/collector/otelcol  \
 		-dropreplace go.opentelemetry.io/collector/pdata  \
+		-dropreplace go.opentelemetry.io/collector/pdata/testdata  \
 		-dropreplace go.opentelemetry.io/collector/processor  \
 		-dropreplace go.opentelemetry.io/collector/processor/batchprocessor  \
 		-dropreplace go.opentelemetry.io/collector/processor/memorylimiterprocessor  \
 		-dropreplace go.opentelemetry.io/collector/receiver  \
+		-dropreplace go.opentelemetry.io/collector/receiver/nopreceiver  \
 		-dropreplace go.opentelemetry.io/collector/receiver/otlpreceiver  \
 		-dropreplace go.opentelemetry.io/collector/semconv  \
 		-dropreplace go.opentelemetry.io/collector/service"
