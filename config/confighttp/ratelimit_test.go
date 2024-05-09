@@ -19,10 +19,10 @@ import (
 
 func TestServerRateLimit(t *testing.T) {
 	// prepare
-	hss := HTTPServerSettings{
+	hss := ServerConfig{
 		Endpoint: "localhost:0",
 		RateLimit: &RateLimit{
-			RateLimiterID: component.NewID("mock"),
+			RateLimiterID: component.NewID(component.MustNewType("mock")),
 		},
 	}
 
@@ -30,7 +30,7 @@ func TestServerRateLimit(t *testing.T) {
 
 	host := &mockHost{
 		ext: map[component.ID]component.Component{
-			component.NewID("mock"): limiter,
+			component.NewID(component.MustNewType("mock")): limiter,
 		},
 	}
 
@@ -39,7 +39,7 @@ func TestServerRateLimit(t *testing.T) {
 		handlerCalled = true
 	})
 
-	srv, err := hss.ToServer(host, componenttest.NewNopTelemetrySettings(), handler)
+	srv, err := hss.ToServer(context.Background(), host, componenttest.NewNopTelemetrySettings(), handler)
 	require.NoError(t, err)
 
 	// test
@@ -51,34 +51,34 @@ func TestServerRateLimit(t *testing.T) {
 }
 
 func TestInvalidServerRateLimit(t *testing.T) {
-	hss := HTTPServerSettings{
+	hss := ServerConfig{
 		RateLimit: &RateLimit{
-			RateLimiterID: component.NewID("non-existing"),
+			RateLimiterID: component.NewID(component.MustNewType("non_existing")),
 		},
 	}
 
-	srv, err := hss.ToServer(componenttest.NewNopHost(), componenttest.NewNopTelemetrySettings(), http.NewServeMux())
+	srv, err := hss.ToServer(context.Background(), componenttest.NewNopHost(), componenttest.NewNopTelemetrySettings(), http.NewServeMux())
 	require.Error(t, err)
 	require.Nil(t, srv)
 }
 
 func TestRejectedServerRateLimit(t *testing.T) {
 	// prepare
-	hss := HTTPServerSettings{
+	hss := ServerConfig{
 		Endpoint: "localhost:0",
 		RateLimit: &RateLimit{
-			RateLimiterID: component.NewID("mock"),
+			RateLimiterID: component.NewID(component.MustNewType("mock")),
 		},
 	}
 	host := &mockHost{
 		ext: map[component.ID]component.Component{
-			component.NewID("mock"): &mockRateLimiter{
+			component.NewID(component.MustNewType("mock")): &mockRateLimiter{
 				err: errors.New("rate limited"),
 			},
 		},
 	}
 
-	srv, err := hss.ToServer(host, componenttest.NewNopTelemetrySettings(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv, err := hss.ToServer(context.Background(), host, componenttest.NewNopTelemetrySettings(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	require.NoError(t, err)
 
 	// test
