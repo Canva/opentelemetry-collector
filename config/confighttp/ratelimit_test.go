@@ -35,7 +35,7 @@ func TestServerRateLimit(t *testing.T) {
 	}
 
 	var handlerCalled bool
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		handlerCalled = true
 	})
 
@@ -78,7 +78,7 @@ func TestRejectedServerRateLimit(t *testing.T) {
 		},
 	}
 
-	srv, err := hss.ToServer(context.Background(), host, componenttest.NewNopTelemetrySettings(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv, err := hss.ToServer(context.Background(), host, componenttest.NewNopTelemetrySettings(), http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	require.NoError(t, err)
 
 	// test
