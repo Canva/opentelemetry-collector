@@ -82,12 +82,15 @@ func NewTracesExporter(
 	if pusher == nil {
 		return nil, errNilPushTraceData
 	}
-	tracesOpts := []Option{withMarshaler(tracesRequestMarshaler), withUnmarshaler(newTraceRequestUnmarshalerFunc(pusher))}
+	tracesOpts := []Option{
+		withMarshaler(tracesRequestMarshaler), withUnmarshaler(newTraceRequestUnmarshalerFunc(pusher)),
+		withBatchFuncs(mergeTraces, mergeSplitTraces),
+	}
 	return NewTracesRequestExporter(ctx, set, requestFromTraces(pusher), append(tracesOpts, options...)...)
 }
 
 // RequestFromTracesFunc converts ptrace.Traces into a user-defined Request.
-// This API is at the early stage of development and may change without backward compatibility
+// Experimental: This API is at the early stage of development and may change without backward compatibility
 // until https://github.com/open-telemetry/opentelemetry-collector/issues/8122 is resolved.
 type RequestFromTracesFunc func(context.Context, ptrace.Traces) (Request, error)
 
@@ -99,7 +102,7 @@ func requestFromTraces(pusher consumer.ConsumeTracesFunc) RequestFromTracesFunc 
 }
 
 // NewTracesRequestExporter creates a new traces exporter based on a custom TracesConverter and RequestSender.
-// This API is at the early stage of development and may change without backward compatibility
+// Experimental: This API is at the early stage of development and may change without backward compatibility
 // until https://github.com/open-telemetry/opentelemetry-collector/issues/8122 is resolved.
 func NewTracesRequestExporter(
 	_ context.Context,

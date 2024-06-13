@@ -5,6 +5,7 @@ package errors // import "go.opentelemetry.io/collector/receiver/otlpreceiver/in
 
 import (
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -40,6 +41,36 @@ func Test_GetStatusFromError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := GetStatusFromError(tt.input)
 			assert.Equal(t, tt.expected.Err(), result)
+		})
+	}
+}
+
+func Test_GetHTTPStatusCodeFromStatus(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    *status.Status
+		expected int
+	}{
+		{
+			name:     "Retryable Status",
+			input:    status.New(codes.Unavailable, "test"),
+			expected: http.StatusServiceUnavailable,
+		},
+		{
+			name:     "Non-retryable Status",
+			input:    status.New(codes.InvalidArgument, "test"),
+			expected: http.StatusInternalServerError,
+		},
+		{
+			name:     "Specifically 429",
+			input:    status.New(codes.ResourceExhausted, "test"),
+			expected: http.StatusTooManyRequests,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GetHTTPStatusCodeFromStatus(tt.input)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }

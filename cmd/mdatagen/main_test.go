@@ -6,23 +6,27 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	md "go.opentelemetry.io/collector/cmd/mdatagen/internal/metadata"
-	"go.opentelemetry.io/collector/receiver/receivertest"
+	"go.opentelemetry.io/collector/component"
 )
 
-func Test_runContents(t *testing.T) {
+func TestRunContents(t *testing.T) {
 	tests := []struct {
 		yml                  string
 		wantMetricsGenerated bool
 		wantConfigGenerated  bool
 		wantStatusGenerated  bool
-		wantTestsGenerated   bool
+		wantGoleakIgnore     bool
+		wantGoleakSkip       bool
+		wantGoleakSetup      bool
+		wantGoleakTeardown   bool
 		wantErr              bool
 	}{
 		{
@@ -46,28 +50,43 @@ func Test_runContents(t *testing.T) {
 		},
 		{
 			yml:                 "with_tests_receiver.yaml",
-			wantTestsGenerated:  true,
 			wantStatusGenerated: true,
 		},
 		{
 			yml:                 "with_tests_exporter.yaml",
-			wantTestsGenerated:  true,
 			wantStatusGenerated: true,
 		},
 		{
 			yml:                 "with_tests_processor.yaml",
-			wantTestsGenerated:  true,
 			wantStatusGenerated: true,
 		},
 		{
 			yml:                 "with_tests_extension.yaml",
-			wantTestsGenerated:  true,
 			wantStatusGenerated: true,
 		},
 		{
 			yml:                 "with_tests_connector.yaml",
-			wantTestsGenerated:  true,
 			wantStatusGenerated: true,
+		},
+		{
+			yml:                 "with_goleak_ignores.yaml",
+			wantStatusGenerated: true,
+			wantGoleakIgnore:    true,
+		},
+		{
+			yml:                 "with_goleak_skip.yaml",
+			wantStatusGenerated: true,
+			wantGoleakSkip:      true,
+		},
+		{
+			yml:                 "with_goleak_setup.yaml",
+			wantStatusGenerated: true,
+			wantGoleakSetup:     true,
+		},
+		{
+			yml:                 "with_goleak_teardown.yaml",
+			wantStatusGenerated: true,
+			wantGoleakTeardown:  true,
 		},
 	}
 	for _, tt := range tests {
@@ -109,31 +128,63 @@ foo
 				require.NoFileExists(t, filepath.Join(tmpdir, "internal/metadata/generated_config_test.go"))
 			}
 
+			var contents []byte
 			if tt.wantStatusGenerated {
 				require.FileExists(t, filepath.Join(tmpdir, "internal/metadata/generated_status.go"))
-				contents, err := os.ReadFile(filepath.Join(tmpdir, "README.md")) // nolint: gosec
+				contents, err = os.ReadFile(filepath.Join(tmpdir, "README.md")) // nolint: gosec
 				require.NoError(t, err)
 				require.NotContains(t, string(contents), "foo")
 			} else {
 				require.NoFileExists(t, filepath.Join(tmpdir, "internal/metadata/generated_status.go"))
-				contents, err := os.ReadFile(filepath.Join(tmpdir, "README.md")) // nolint: gosec
+				contents, err = os.ReadFile(filepath.Join(tmpdir, "README.md")) // nolint: gosec
 				require.NoError(t, err)
 				require.Contains(t, string(contents), "foo")
 			}
 
-			if tt.wantTestsGenerated {
-				require.FileExists(t, filepath.Join(tmpdir, "generated_component_test.go"))
-				contents, err := os.ReadFile(filepath.Join(tmpdir, "generated_component_test.go")) // nolint: gosec
-				require.NoError(t, err)
-				require.Contains(t, string(contents), "func Test")
+			require.FileExists(t, filepath.Join(tmpdir, "generated_component_test.go"))
+			contents, err = os.ReadFile(filepath.Join(tmpdir, "generated_component_test.go")) // nolint: gosec
+			require.NoError(t, err)
+			require.Contains(t, string(contents), "func Test")
+			_, err = parser.ParseFile(token.NewFileSet(), "", contents, parser.DeclarationErrors)
+			require.NoError(t, err)
+
+			require.FileExists(t, filepath.Join(tmpdir, "generated_package_test.go"))
+			contents, err = os.ReadFile(filepath.Join(tmpdir, "generated_package_test.go")) // nolint: gosec
+			require.NoError(t, err)
+			require.Contains(t, string(contents), "func TestMain")
+			_, err = parser.ParseFile(token.NewFileSet(), "", contents, parser.DeclarationErrors)
+			require.NoError(t, err)
+
+			if tt.wantGoleakSkip {
+				require.Contains(t, string(contents), "skipping goleak test")
 			} else {
-				require.NoFileExists(t, filepath.Join(tmpdir, "generated_component_test.go"))
+				require.NotContains(t, string(contents), "skipping goleak test")
+			}
+
+			if tt.wantGoleakIgnore {
+				require.Contains(t, string(contents), "IgnoreTopFunction")
+				require.Contains(t, string(contents), "IgnoreAnyFunction")
+			} else {
+				require.NotContains(t, string(contents), "IgnoreTopFunction")
+				require.NotContains(t, string(contents), "IgnoreAnyFunction")
+			}
+
+			if tt.wantGoleakSetup {
+				require.Contains(t, string(contents), "setupFunc")
+			} else {
+				require.NotContains(t, string(contents), "setupFunc")
+			}
+
+			if tt.wantGoleakTeardown {
+				require.Contains(t, string(contents), "teardownFunc")
+			} else {
+				require.NotContains(t, string(contents), "teardownFunc")
 			}
 		})
 	}
 }
 
-func Test_run(t *testing.T) {
+func TestRun(t *testing.T) {
 	type args struct {
 		ymlPath string
 	}
@@ -162,14 +213,14 @@ func Test_run(t *testing.T) {
 	}
 }
 
-func Test_inlineReplace(t *testing.T) {
+func TestInlineReplace(t *testing.T) {
 	tests := []struct {
 		name           string
 		markdown       string
 		outputFile     string
 		componentClass string
 		warnings       []string
-		stability      map[string][]string
+		stability      map[component.StabilityLevel][]string
 		distros        []string
 		codeowners     *Codeowners
 	}{
@@ -298,8 +349,11 @@ Some warning there.
 Some info about a component
 `,
 			outputFile: "readme_with_multiple_signals.md",
-			stability:  map[string][]string{"beta": {"metrics"}, "alpha": {"logs"}},
-			distros:    []string{"contrib"},
+			stability: map[component.StabilityLevel][]string{
+				component.StabilityLevelBeta:  {"metrics"},
+				component.StabilityLevelAlpha: {"logs"},
+			},
+			distros: []string{"contrib"},
 		},
 		{
 			name: "readme with cmd class",
@@ -310,15 +364,18 @@ Some info about a component
 
 Some info about a component
 `,
-			outputFile:     "readme_with_cmd_class.md",
-			stability:      map[string][]string{"beta": {"metrics"}, "alpha": {"logs"}},
+			outputFile: "readme_with_cmd_class.md",
+			stability: map[component.StabilityLevel][]string{
+				component.StabilityLevelBeta:  {"metrics"},
+				component.StabilityLevelAlpha: {"logs"},
+			},
 			componentClass: "cmd",
 			distros:        []string{},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stability := map[string][]string{"beta": {"metrics"}}
+			stability := map[component.StabilityLevel][]string{component.StabilityLevelBeta: {"metrics"}}
 			if len(tt.stability) > 0 {
 				stability = tt.stability
 			}
@@ -367,7 +424,9 @@ func TestGenerateStatusMetadata(t *testing.T) {
 			md: metadata{
 				Type: "foo",
 				Status: &Status{
-					Stability:     map[string][]string{"beta": {"metrics"}},
+					Stability: map[component.StabilityLevel][]string{
+						component.StabilityLevelBeta: {"metrics"},
+					},
 					Distributions: []string{"contrib"},
 					Class:         "receiver",
 				},
@@ -378,26 +437,15 @@ package metadata
 
 import (
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
 )
 
 var (
-	Type      = component.MustNewType("foo")
-	scopeName = ""
+	Type = component.MustNewType("foo")
 )
 
 const (
 	MetricsStability = component.StabilityLevelBeta
 )
-
-func Meter(settings component.TelemetrySettings) metric.Meter {
-	return settings.MeterProvider.Meter(scopeName)
-}
-
-func Tracer(settings component.TelemetrySettings) trace.Tracer {
-	return settings.TracerProvider.Tracer(scopeName)
-}
 `,
 		},
 		{
@@ -405,7 +453,9 @@ func Tracer(settings component.TelemetrySettings) trace.Tracer {
 			md: metadata{
 				Type: "foo",
 				Status: &Status{
-					Stability:     map[string][]string{"alpha": {"metrics"}},
+					Stability: map[component.StabilityLevel][]string{
+						component.StabilityLevelAlpha: {"metrics"},
+					},
 					Distributions: []string{"contrib"},
 					Class:         "receiver",
 				},
@@ -416,26 +466,15 @@ package metadata
 
 import (
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
 )
 
 var (
-	Type      = component.MustNewType("foo")
-	scopeName = ""
+	Type = component.MustNewType("foo")
 )
 
 const (
 	MetricsStability = component.StabilityLevelAlpha
 )
-
-func Meter(settings component.TelemetrySettings) metric.Meter {
-	return settings.MeterProvider.Meter(scopeName)
-}
-
-func Tracer(settings component.TelemetrySettings) trace.Tracer {
-	return settings.TracerProvider.Tracer(scopeName)
-}
 `,
 		},
 	}
@@ -453,9 +492,86 @@ func Tracer(settings component.TelemetrySettings) trace.Tracer {
 	}
 }
 
-// TestGenerated verifies that the internal/metadata API is generated correctly.
-func TestGenerated(t *testing.T) {
-	mb := md.NewMetricsBuilder(md.DefaultMetricsBuilderConfig(), receivertest.NewNopCreateSettings())
-	m := mb.Emit()
-	require.Equal(t, 0, m.ResourceMetrics().Len())
+func TestGenerateTelemetryMetadata(t *testing.T) {
+	tests := []struct {
+		name     string
+		output   string
+		md       metadata
+		expected string
+	}{
+		{
+			name: "foo component with beta status",
+			md: metadata{
+				Type: "foo",
+				Status: &Status{
+					Stability: map[component.StabilityLevel][]string{
+						component.StabilityLevelBeta: {"metrics"},
+					},
+					Distributions: []string{"contrib"},
+					Class:         "receiver",
+				},
+			},
+			expected: `// Code generated by mdatagen. DO NOT EDIT.
+
+package metadata
+
+import (
+	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+)
+
+func Meter(settings component.TelemetrySettings) metric.Meter {
+	return settings.MeterProvider.Meter("")
+}
+
+func Tracer(settings component.TelemetrySettings) trace.Tracer {
+	return settings.TracerProvider.Tracer("")
+}
+`,
+		},
+		{
+			name: "foo component with alpha status",
+			md: metadata{
+				Type: "foo",
+				Status: &Status{
+					Stability: map[component.StabilityLevel][]string{
+						component.StabilityLevelAlpha: {"metrics"},
+					},
+					Distributions: []string{"contrib"},
+					Class:         "receiver",
+				},
+			},
+			expected: `// Code generated by mdatagen. DO NOT EDIT.
+
+package metadata
+
+import (
+	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+)
+
+func Meter(settings component.TelemetrySettings) metric.Meter {
+	return settings.MeterProvider.Meter("")
+}
+
+func Tracer(settings component.TelemetrySettings) trace.Tracer {
+	return settings.TracerProvider.Tracer("")
+}
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpdir := t.TempDir()
+			err := generateFile("templates/telemetry.go.tmpl",
+				filepath.Join(tmpdir, "generated_telemetry.go"), tt.md, "metadata")
+			require.NoError(t, err)
+			actual, err := os.ReadFile(filepath.Join(tmpdir, "generated_telemetry.go")) // nolint: gosec
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, string(actual))
+		})
+	}
 }
