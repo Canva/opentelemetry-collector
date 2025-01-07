@@ -290,6 +290,9 @@ type ServerConfig struct {
 	// Auth for this receiver
 	Auth *AuthConfig `mapstructure:"auth"`
 
+	// RateLimit for this receiver
+	RateLimit *RateLimit `mapstructure:"rate_limit"`
+
 	// MaxRequestBodySize sets the maximum request body size in bytes. Default: 20MiB.
 	MaxRequestBodySize int64 `mapstructure:"max_request_body_size"`
 
@@ -439,6 +442,17 @@ func (hss *ServerConfig) ToServer(_ context.Context, host component.Host, settin
 		}
 
 		handler = authInterceptor(handler, server, hss.Auth.RequestParameters)
+	}
+
+	// The RateLimit interceptor should always be right after auth to ensure
+	// the request rate is within an acceptable threshold.
+	if hss.RateLimit != nil {
+		limiter, err := hss.RateLimit.rateLimiter(host.GetExtensions())
+		if err != nil {
+			return nil, err
+		}
+
+		handler = rateLimitInterceptor(handler, limiter)
 	}
 
 	if hss.CORS != nil && len(hss.CORS.AllowedOrigins) > 0 {
