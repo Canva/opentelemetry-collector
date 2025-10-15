@@ -20,19 +20,12 @@ import (
 
 const (
 	mibBytes = 1024 * 1024
-
-	// Minimum interval between forced GC when in soft limited mode. We don't want to
-	// do GCs too frequently since it is a CPU-heavy operation.
-	minGCIntervalWhenSoftLimited = 10 * time.Second
 )
 
 var (
 	// ErrDataRefused will be returned to callers of ConsumeTraceData to indicate
 	// that data is being refused due to high memory usage.
 	ErrDataRefused = errors.New("data refused due to high memory usage")
-
-	// ErrShutdownNotStarted indicates no memorylimiter has not start when shutdown
-	ErrShutdownNotStarted = errors.New("no existing monitoring routine is running")
 
 	// GetMemoryFn and ReadMemStatsFn make it overridable by tests
 	GetMemoryFn    = iruntime.TotalMemory
@@ -50,11 +43,14 @@ type MemoryLimiter struct {
 
 	ticker *time.Ticker
 
-	lastGCDone time.Time
+	minGCIntervalWhenSoftLimited time.Duration
+	minGCIntervalWhenHardLimited time.Duration
+	lastGCDone                   time.Time
 
-	// The function to read the mem values is set as a reference to help with
+	// The functions to read the mem values and run GC are set as a reference to help with
 	// testing different values.
 	readMemStatsFn func(m *runtime.MemStats)
+	runGCFn        func()
 
 	// Fields used for logging.
 	logger *zap.Logger
@@ -78,18 +74,20 @@ func NewMemoryLimiter(cfg *Config, logger *zap.Logger) (*MemoryLimiter, error) {
 		zap.Duration("check_interval", cfg.CheckInterval))
 
 	return &MemoryLimiter{
-		usageChecker:   *usageChecker,
-		memCheckWait:   cfg.CheckInterval,
-		ticker:         time.NewTicker(cfg.CheckInterval),
-		readMemStatsFn: ReadMemStatsFn,
-		logger:         logger,
-		mustRefuse:     &atomic.Bool{},
+		usageChecker:                 *usageChecker,
+		memCheckWait:                 cfg.CheckInterval,
+		ticker:                       time.NewTicker(cfg.CheckInterval),
+		minGCIntervalWhenSoftLimited: cfg.MinGCIntervalWhenSoftLimited,
+		minGCIntervalWhenHardLimited: cfg.MinGCIntervalWhenHardLimited,
+		lastGCDone:                   time.Now(),
+		readMemStatsFn:               ReadMemStatsFn,
+		runGCFn:                      runtime.GC,
+		logger:                       logger,
+		mustRefuse:                   &atomic.Bool{},
 	}, nil
 }
 
-// startMonitoring starts a single ticker'd goroutine per instance
-// that will check memory usage every checkInterval period.
-func (ml *MemoryLimiter) startMonitoring() {
+func (ml *MemoryLimiter) Start(_ context.Context, _ component.Host) error {
 	ml.refCounterLock.Lock()
 	defer ml.refCounterLock.Unlock()
 
@@ -110,10 +108,6 @@ func (ml *MemoryLimiter) startMonitoring() {
 			}
 		}()
 	}
-}
-
-func (ml *MemoryLimiter) Start(_ context.Context, _ component.Host) error {
-	ml.startMonitoring()
 	return nil
 }
 
@@ -122,9 +116,10 @@ func (ml *MemoryLimiter) Shutdown(context.Context) error {
 	ml.refCounterLock.Lock()
 	defer ml.refCounterLock.Unlock()
 
-	if ml.refCounter == 0 {
-		return ErrShutdownNotStarted
-	} else if ml.refCounter == 1 {
+	switch ml.refCounter {
+	case 0:
+		return nil
+	case 1:
 		ml.ticker.Stop()
 		close(ml.closed)
 		ml.waitGroup.Wait()
@@ -133,7 +128,7 @@ func (ml *MemoryLimiter) Shutdown(context.Context) error {
 	return nil
 }
 
-// MustRefuse returns if the caller should deny because memory has reached it's configured limits
+// MustRefuse returns true if memory has reached its configured limits
 func (ml *MemoryLimiter) MustRefuse() bool {
 	return ml.mustRefuse.Load()
 }
@@ -167,51 +162,55 @@ func memstatToZapField(ms *runtime.MemStats) zap.Field {
 }
 
 func (ml *MemoryLimiter) doGCandReadMemStats() *runtime.MemStats {
-	runtime.GC()
+	ml.runGCFn()
 	ml.lastGCDone = time.Now()
 	ms := ml.readMemStats()
 	ml.logger.Info("Memory usage after GC.", memstatToZapField(ms))
 	return ms
 }
 
-// CheckMemLimits inspects current memory usage against threshold and toggle mustRefuse when threshold is exceeded
+// CheckMemLimits inspects current memory usage against threshold and toggles mustRefuse when threshold is exceeded
 func (ml *MemoryLimiter) CheckMemLimits() {
 	ms := ml.readMemStats()
 
 	ml.logger.Debug("Currently used memory.", memstatToZapField(ms))
 
+	// Check if we are below the soft limit.
+	aboveSoftLimit := ml.usageChecker.aboveSoftLimit(ms)
+	if !aboveSoftLimit {
+		if ml.mustRefuse.Load() {
+			// Was previously refusing but enough memory is available now, no need to limit.
+			ml.logger.Info("Memory usage back within limits. Resuming normal operation.", memstatToZapField(ms))
+		}
+		ml.mustRefuse.Store(aboveSoftLimit)
+		return
+	}
+
 	if ml.usageChecker.aboveHardLimit(ms) {
-		ml.logger.Warn("Memory usage is above hard limit. Forcing a GC.", memstatToZapField(ms))
-		ms = ml.doGCandReadMemStats()
-	}
-
-	// Remember current state.
-	wasRefusing := ml.mustRefuse.Load()
-
-	// Check if the memory usage is above the soft limit.
-	mustRefuse := ml.usageChecker.aboveSoftLimit(ms)
-
-	if wasRefusing && !mustRefuse {
-		// Was previously refusing but enough memory is available now, no need to limit.
-		ml.logger.Info("Memory usage back within limits. Resuming normal operation.", memstatToZapField(ms))
-	}
-
-	if !wasRefusing && mustRefuse {
+		// We are above hard limit, do a GC if it wasn't done recently and see if
+		// it brings memory usage below the soft limit.
+		if time.Since(ml.lastGCDone) > ml.minGCIntervalWhenHardLimited {
+			ml.logger.Warn("Memory usage is above hard limit. Forcing a GC.", memstatToZapField(ms))
+			ms = ml.doGCandReadMemStats()
+			// Check the limit again to see if GC helped.
+			aboveSoftLimit = ml.usageChecker.aboveSoftLimit(ms)
+		}
+	} else {
 		// We are above soft limit, do a GC if it wasn't done recently and see if
 		// it brings memory usage below the soft limit.
-		if time.Since(ml.lastGCDone) > minGCIntervalWhenSoftLimited {
+		if time.Since(ml.lastGCDone) > ml.minGCIntervalWhenSoftLimited {
 			ml.logger.Info("Memory usage is above soft limit. Forcing a GC.", memstatToZapField(ms))
 			ms = ml.doGCandReadMemStats()
 			// Check the limit again to see if GC helped.
-			mustRefuse = ml.usageChecker.aboveSoftLimit(ms)
-		}
-
-		if mustRefuse {
-			ml.logger.Warn("Memory usage is above soft limit. Refusing data.", memstatToZapField(ms))
+			aboveSoftLimit = ml.usageChecker.aboveSoftLimit(ms)
 		}
 	}
 
-	ml.mustRefuse.Store(mustRefuse)
+	if !ml.mustRefuse.Load() && aboveSoftLimit {
+		ml.logger.Warn("Memory usage is above soft limit. Refusing data.", memstatToZapField(ms))
+	}
+
+	ml.mustRefuse.Store(aboveSoftLimit)
 }
 
 type memUsageChecker struct {
@@ -238,6 +237,6 @@ func newFixedMemUsageChecker(memAllocLimit, memSpikeLimit uint64) *memUsageCheck
 	}
 }
 
-func newPercentageMemUsageChecker(totalMemory uint64, percentageLimit, percentageSpike uint64) *memUsageChecker {
+func newPercentageMemUsageChecker(totalMemory, percentageLimit, percentageSpike uint64) *memUsageChecker {
 	return newFixedMemUsageChecker(percentageLimit*totalMemory/100, percentageSpike*totalMemory/100)
 }

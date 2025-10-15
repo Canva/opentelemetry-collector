@@ -16,15 +16,16 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
+	"go.opentelemetry.io/collector/config/configoptional"
 )
 
 func TestServerRateLimit(t *testing.T) {
 	// prepare
 	hss := ServerConfig{
 		Endpoint: "localhost:0",
-		RateLimit: &RateLimit{
+		RateLimit: configoptional.Some(RateLimit{
 			RateLimiterID: component.NewID(component.MustNewType("mock")),
-		},
+		}),
 	}
 
 	limiter := &mockRateLimiter{}
@@ -44,7 +45,7 @@ func TestServerRateLimit(t *testing.T) {
 	require.NoError(t, err)
 
 	// test
-	srv.Handler.ServeHTTP(&httptest.ResponseRecorder{}, httptest.NewRequest("GET", "/", nil))
+	srv.Handler.ServeHTTP(&httptest.ResponseRecorder{}, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
 
 	// verify
 	assert.True(t, handlerCalled)
@@ -53,9 +54,9 @@ func TestServerRateLimit(t *testing.T) {
 
 func TestInvalidServerRateLimit(t *testing.T) {
 	hss := ServerConfig{
-		RateLimit: &RateLimit{
+		RateLimit: configoptional.Some(RateLimit{
 			RateLimiterID: component.NewID(component.MustNewType("non_existing")),
-		},
+		}),
 	}
 
 	srv, err := hss.ToServer(context.Background(), componenttest.NewNopHost(), componenttest.NewNopTelemetrySettings(), http.NewServeMux())
@@ -67,9 +68,9 @@ func TestRejectedServerRateLimit(t *testing.T) {
 	// prepare
 	hss := ServerConfig{
 		Endpoint: "localhost:0",
-		RateLimit: &RateLimit{
+		RateLimit: configoptional.Some(RateLimit{
 			RateLimiterID: component.NewID(component.MustNewType("mock")),
-		},
+		}),
 	}
 	host := &mockHost{
 		ext: map[component.ID]component.Component{
@@ -84,10 +85,10 @@ func TestRejectedServerRateLimit(t *testing.T) {
 
 	// test
 	response := &httptest.ResponseRecorder{}
-	srv.Handler.ServeHTTP(response, httptest.NewRequest("GET", "/", nil))
+	srv.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
 
 	// verify
-	assert.Equal(t, response.Result().StatusCode, http.StatusTooManyRequests)
+	assert.Equal(t, http.StatusTooManyRequests, response.Result().StatusCode)
 	assert.Equal(t, response.Result().Status, fmt.Sprintf("%v %s", http.StatusTooManyRequests, http.StatusText(http.StatusTooManyRequests)))
 }
 

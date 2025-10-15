@@ -23,11 +23,11 @@ func testExporterConfig(endpoint string) component.Config {
 	retryConfig := configretry.NewDefaultBackOffConfig()
 	retryConfig.InitialInterval = time.Millisecond // interval is short for the test purposes
 	return &otlpexporter.Config{
-		QueueConfig: exporterhelper.QueueConfig{Enabled: false},
+		QueueConfig: exporterhelper.QueueBatchConfig{Enabled: false},
 		RetryConfig: retryConfig,
 		ClientConfig: configgrpc.ClientConfig{
 			Endpoint: endpoint,
-			TLSSetting: configtls.ClientConfig{
+			TLS: configtls.ClientConfig{
 				Insecure: true,
 			},
 		},
@@ -36,8 +36,7 @@ func testExporterConfig(endpoint string) component.Config {
 
 func testReceiverConfig(endpoint string) component.Config {
 	cfg := otlpreceiver.NewFactory().CreateDefaultConfig()
-	cfg.(*otlpreceiver.Config).HTTP = nil
-	cfg.(*otlpreceiver.Config).GRPC.NetAddr.Endpoint = endpoint
+	cfg.(*otlpreceiver.Config).GRPC.GetOrInsertDefault().NetAddr.Endpoint = endpoint
 	return cfg
 }
 

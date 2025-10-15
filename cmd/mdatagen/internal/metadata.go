@@ -33,6 +33,8 @@ type Metadata struct {
 	Attributes map[AttributeName]Attribute `mapstructure:"attributes"`
 	// Metrics that can be emitted by the component.
 	Metrics map[MetricName]Metric `mapstructure:"metrics"`
+	// Events that can be emitted by the component.
+	Events map[EventName]Event `mapstructure:"events"`
 	// GithubProject is the project where the component README lives in the format of org/repo, defaults to open-telemetry/opentelemetry-collector-contrib
 	GithubProject string `mapstructure:"github_project"`
 	// ScopeName of the metrics emitted by the component.
@@ -41,6 +43,16 @@ type Metadata struct {
 	ShortFolderName string `mapstructure:"-"`
 	// Tests is the set of tests generated with the component
 	Tests Tests `mapstructure:"tests"`
+	// PackageName is the name of the package where the component is defined.
+	PackageName string `mapstructure:"package_name"`
+}
+
+func (md Metadata) GetCodeCovComponentID() string {
+	if md.Status.CodeCovComponentID != "" {
+		return md.Status.CodeCovComponentID
+	}
+
+	return strings.ReplaceAll(md.Status.Class+"_"+md.Type, "/", "_")
 }
 
 func (md *Metadata) Validate() error {
@@ -62,9 +74,10 @@ func (md *Metadata) Validate() error {
 		errs = errors.Join(errs, err)
 	}
 
-	if err := md.validateMetrics(); err != nil {
+	if err := md.validateMetricsAndEvents(); err != nil {
 		errs = errors.Join(errs, err)
 	}
+
 	return errs
 }
 
@@ -101,15 +114,20 @@ func (md *Metadata) validateResourceAttributes() error {
 		if attr.Type == empty {
 			errs = errors.Join(errs, fmt.Errorf("empty type for resource attribute: %v", name))
 		}
+		if attr.EnabledPtr == nil {
+			errs = errors.Join(errs, fmt.Errorf("enabled field is required for resource attribute: %v", name))
+		}
 	}
 	return errs
 }
 
-func (md *Metadata) validateMetrics() error {
+func (md *Metadata) validateMetricsAndEvents() error {
 	var errs error
 	usedAttrs := map[AttributeName]bool{}
-	errs = errors.Join(errs, validateMetrics(md.Metrics, md.Attributes, usedAttrs),
+	errs = errors.Join(errs,
+		validateMetrics(md.Metrics, md.Attributes, usedAttrs),
 		validateMetrics(md.Telemetry.Metrics, md.Attributes, usedAttrs),
+		validateEvents(md.Events, md.Attributes, usedAttrs),
 		md.validateAttributes(usedAttrs))
 	return errs
 }
@@ -125,6 +143,9 @@ func (md *Metadata) validateAttributes(usedAttrs map[AttributeName]bool) error {
 		if attr.Type == empty {
 			errs = errors.Join(errs, fmt.Errorf("empty type for attribute: %v", attrName))
 		}
+		if attr.EnabledPtr != nil {
+			errs = errors.Join(errs, fmt.Errorf("enabled field is not allowed for regular attribute: %v", attrName))
+		}
 		if !usedAttrs[attrName] {
 			unusedAttrs = append(unusedAttrs, attrName)
 		}
@@ -133,6 +154,22 @@ func (md *Metadata) validateAttributes(usedAttrs map[AttributeName]bool) error {
 		errs = errors.Join(errs, fmt.Errorf("unused attributes: %v", unusedAttrs))
 	}
 	return errs
+}
+
+func (md *Metadata) supportsSignal(signal string) bool {
+	if md.Status == nil {
+		return false
+	}
+
+	for _, signals := range md.Status.Stability {
+		for _, s := range signals {
+			if s == signal {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func validateMetrics(metrics map[MetricName]Metric, attributes map[AttributeName]Attribute, usedAttrs map[AttributeName]bool) error {
@@ -152,6 +189,28 @@ func validateMetrics(metrics map[MetricName]Metric, attributes map[AttributeName
 		}
 		if len(unknownAttrs) > 0 {
 			errs = errors.Join(errs, fmt.Errorf(`metric "%v" refers to undefined attributes: %v`, mn, unknownAttrs))
+		}
+	}
+	return errs
+}
+
+func validateEvents(events map[EventName]Event, attributes map[AttributeName]Attribute, usedAttrs map[AttributeName]bool) error {
+	var errs error
+	for en, e := range events {
+		if err := e.validate(); err != nil {
+			errs = errors.Join(errs, fmt.Errorf(`event "%v": %w`, en, err))
+			continue
+		}
+		unknownAttrs := make([]AttributeName, 0, len(e.Attributes))
+		for _, attr := range e.Attributes {
+			if _, ok := attributes[attr]; ok {
+				usedAttrs[attr] = true
+			} else {
+				unknownAttrs = append(unknownAttrs, attr)
+			}
+		}
+		if len(unknownAttrs) > 0 {
+			errs = errors.Join(errs, fmt.Errorf(`event "%v" refers to undefined attributes: %v`, en, unknownAttrs))
 		}
 	}
 	return errs
@@ -198,7 +257,7 @@ func (mvt *ValueType) UnmarshalText(text []byte) error {
 
 // String returns capitalized name of the ValueType.
 func (mvt ValueType) String() string {
-	return strings.Title(strings.ToLower(mvt.ValueType.String())) // nolint SA1019
+	return strings.Title(strings.ToLower(mvt.ValueType.String())) //nolint:staticcheck // SA1019
 }
 
 // Primitive returns name of primitive type for the ValueType.
@@ -239,8 +298,8 @@ type Attribute struct {
 	Description string `mapstructure:"description"`
 	// NameOverride can be used to override the attribute name.
 	NameOverride string `mapstructure:"name_override"`
-	// Enabled defines whether the attribute is enabled by default.
-	Enabled bool `mapstructure:"enabled"`
+	// EnabledPtr defines whether the attribute is enabled by default.
+	EnabledPtr *bool `mapstructure:"enabled"`
 	// Include can be used to filter attributes.
 	Include []filter.Config `mapstructure:"include"`
 	// Include can be used to filter attributes.
@@ -253,6 +312,20 @@ type Attribute struct {
 	FullName AttributeName `mapstructure:"-"`
 	// Warnings that will be shown to user under specified conditions.
 	Warnings Warnings `mapstructure:"warnings"`
+	// Optional defines whether the attribute is required.
+	Optional bool `mapstructure:"optional"`
+}
+
+// Enabled returns the boolean value of EnabledPtr.
+// This method is needed to differentiate between different types of attributes:
+// - Resource attributes: EnabledPtr is always set (non-nil) due to validation
+// - Regular attributes: EnabledPtr is always nil due to validation
+// Panics if EnabledPtr is nil, indicating incorrect template usage.
+func (a Attribute) Enabled() bool {
+	if a.EnabledPtr == nil {
+		panic("Enabled() must not be called on regular attributes, only on resource attributes")
+	}
+	return *a.EnabledPtr
 }
 
 // Name returns actual name of the attribute that is set on the metric after applying NameOverride.
@@ -265,7 +338,7 @@ func (a Attribute) Name() AttributeName {
 
 func (a Attribute) TestValue() string {
 	if a.Enum != nil {
-		return fmt.Sprintf(`"%s"`, a.Enum[0])
+		return fmt.Sprintf(`%q`, a.Enum[0])
 	}
 	switch a.Type.ValueType {
 	case pcommon.ValueTypeEmpty:
@@ -286,4 +359,33 @@ func (a Attribute) TestValue() string {
 		return fmt.Sprintf(`[]byte("%s-val")`, a.FullName)
 	}
 	return ""
+}
+
+type Signal struct {
+	// Enabled defines whether the signal is enabled by default.
+	Enabled bool `mapstructure:"enabled"`
+
+	// Warnings that will be shown to user under specified conditions.
+	Warnings Warnings `mapstructure:"warnings"`
+
+	// Description of the signal.
+	Description string `mapstructure:"description"`
+
+	// The stability level of the signal.
+	Stability Stability `mapstructure:"stability"`
+
+	// Extended documentation of the signal. If specified, this will be appended to the description used in generated documentation.
+	ExtendedDocumentation string `mapstructure:"extended_documentation"`
+
+	// Attributes is the list of attributes that the signal emits.
+	Attributes []AttributeName `mapstructure:"attributes"`
+}
+
+func (s Signal) HasOptionalAttribute(attrs map[AttributeName]Attribute) bool {
+	for _, attr := range s.Attributes {
+		if v, exists := attrs[attr]; exists && v.Optional {
+			return true
+		}
+	}
+	return false
 }

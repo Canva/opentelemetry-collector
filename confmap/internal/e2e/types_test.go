@@ -35,11 +35,11 @@ type Test struct {
 	unmarshalErr string
 }
 
-type TargetConfig[T any] struct {
+type targetConfig[T any] struct {
 	Field T `mapstructure:"field"`
 }
 
-func NewResolver(t testing.TB, path string) *confmap.Resolver {
+func NewResolver(tb testing.TB, path string) *confmap.Resolver {
 	resolver, err := confmap.NewResolver(confmap.ResolverSettings{
 		URIs: []string{filepath.Join("testdata", path)},
 		ProviderFactories: []confmap.ProviderFactory{
@@ -48,11 +48,11 @@ func NewResolver(t testing.TB, path string) *confmap.Resolver {
 		},
 		DefaultScheme: "env",
 	})
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	return resolver
 }
 
-func AssertExpectedMatch[T any](t *testing.T, tt Test, conf *confmap.Conf, cfg *TargetConfig[T]) {
+func AssertExpectedMatch[T any](t *testing.T, tt Test, conf *confmap.Conf, cfg *targetConfig[T]) {
 	err := conf.Unmarshal(cfg)
 	if tt.unmarshalErr != "" {
 		require.ErrorContains(t, err, tt.unmarshalErr)
@@ -72,16 +72,16 @@ func AssertResolvesTo(t *testing.T, resolver *confmap.Resolver, tt Test) {
 
 	switch tt.targetField {
 	case TargetFieldInt:
-		var cfg TargetConfig[int]
+		var cfg targetConfig[int]
 		AssertExpectedMatch(t, tt, conf, &cfg)
 	case TargetFieldString, TargetFieldInlineString:
-		var cfg TargetConfig[string]
+		var cfg targetConfig[string]
 		AssertExpectedMatch(t, tt, conf, &cfg)
 	case TargetFieldBool:
-		var cfg TargetConfig[bool]
+		var cfg targetConfig[bool]
 		AssertExpectedMatch(t, tt, conf, &cfg)
 	case TargetFieldSlice:
-		var cfg TargetConfig[[]any]
+		var cfg targetConfig[[]any]
 		AssertExpectedMatch(t, tt, conf, &cfg)
 	default:
 		t.Fatalf("unexpected target field %q", tt.targetField)
@@ -145,7 +145,7 @@ func TestStrictTypeCasting(t *testing.T) {
 		{
 			value:        "\"0123\"",
 			targetField:  TargetFieldInt,
-			unmarshalErr: "'field' expected type 'int', got unconvertible type 'string', value: '\"0123\"'",
+			unmarshalErr: "'field' expected type 'int', got unconvertible type 'string'",
 		},
 		{
 			value:       "\"0123\"",
@@ -165,12 +165,12 @@ func TestStrictTypeCasting(t *testing.T) {
 		{
 			value:        "t",
 			targetField:  TargetFieldBool,
-			unmarshalErr: "'field' expected type '%!s(bool=false)', got unconvertible type '\"t\"', value: '\"t\"'",
+			unmarshalErr: "'field' expected type 'bool', got unconvertible type 'string'",
 		},
 		{
 			value:        "23",
 			targetField:  TargetFieldBool,
-			unmarshalErr: "'field' expected type '%!s(bool=false)', got unconvertible type '23', value: '23'",
+			unmarshalErr: "'field' expected type 'bool', got unconvertible type 'int'",
 		},
 		{
 			value:       "{\"field\": 123}",
@@ -417,7 +417,7 @@ func TestRecursiveMaps(t *testing.T) {
 
 	confStr, err := resolver.Resolve(context.Background())
 	require.NoError(t, err)
-	var cfgStr TargetConfig[string]
+	var cfgStr targetConfig[string]
 	err = confStr.Unmarshal(&cfgStr)
 	require.NoError(t, err)
 	require.Equal(t, `{env: "{env2: "{value: 123}"}", inline: "inline {env2: "{value: 123}"}"}`,
@@ -437,7 +437,7 @@ func TestIssue10787(t *testing.T) {
 			},
 		},
 		"processors": map[string]any{
-			"batch": nil,
+			"memory_limiter": nil,
 		},
 		"receivers": map[string]any{
 			"otlp": map[string]any{
@@ -455,7 +455,7 @@ func TestIssue10787(t *testing.T) {
 			"pipelines": map[string]any{
 				"traces": map[string]any{
 					"exporters":  []any{"debug"},
-					"processors": []any{"batch"},
+					"processors": []any{"memory_limiter"},
 					"receivers":  []any{"otlp"},
 				},
 			},
@@ -501,7 +501,7 @@ debug:
 
 	confStr, err := resolver.Resolve(context.Background())
 	require.NoError(t, err)
-	var cfgStr TargetConfig[string]
+	var cfgStr targetConfig[string]
 	err = confStr.Unmarshal(&cfgStr)
 	require.NoError(t, err)
 	require.Equal(t, `# this is a comment
@@ -544,7 +544,7 @@ debug:
 
 	confStr, err := resolver.Resolve(context.Background())
 	require.NoError(t, err)
-	var cfgStr TargetConfig[string]
+	var cfgStr targetConfig[string]
 	err = confStr.Unmarshal(&cfgStr)
 	require.NoError(t, err)
 	require.Equal(t, `# this is a comment with an expanded env var
@@ -604,7 +604,7 @@ func TestIssue10937_MapType(t *testing.T) {
 	conf, err := resolver.Resolve(context.Background())
 	require.NoError(t, err)
 
-	var cfg TargetConfig[map[string]configopaque.String]
+	var cfg targetConfig[map[string]configopaque.String]
 	err = conf.Unmarshal(&cfg)
 	require.NoError(t, err)
 	require.Equal(t, map[string]configopaque.String{"key": "1234"}, cfg.Field)
@@ -617,22 +617,22 @@ func TestIssue10937_ArrayType(t *testing.T) {
 	conf, err := resolver.Resolve(context.Background())
 	require.NoError(t, err)
 
-	var cfgStrSlice TargetConfig[[]string]
+	var cfgStrSlice targetConfig[[]string]
 	err = conf.Unmarshal(&cfgStrSlice)
 	require.NoError(t, err)
 	require.Equal(t, []string{"1234"}, cfgStrSlice.Field)
 
-	var cfgStrArray TargetConfig[[1]string]
+	var cfgStrArray targetConfig[[1]string]
 	err = conf.Unmarshal(&cfgStrArray)
 	require.NoError(t, err)
 	require.Equal(t, [1]string{"1234"}, cfgStrArray.Field)
 
-	var cfgAnySlice TargetConfig[[]any]
+	var cfgAnySlice targetConfig[[]any]
 	err = conf.Unmarshal(&cfgAnySlice)
 	require.NoError(t, err)
 	require.Equal(t, []any{1234}, cfgAnySlice.Field)
 
-	var cfgAnyArray TargetConfig[[1]any]
+	var cfgAnyArray targetConfig[[1]any]
 	err = conf.Unmarshal(&cfgAnyArray)
 	require.NoError(t, err)
 	require.Equal(t, [1]any{1234}, cfgAnyArray.Field)
@@ -645,12 +645,12 @@ func TestIssue10937_ComplexType(t *testing.T) {
 	conf, err := resolver.Resolve(context.Background())
 	require.NoError(t, err)
 
-	var cfgStringy TargetConfig[[]map[string][]string]
+	var cfgStringy targetConfig[[]map[string][]string]
 	err = conf.Unmarshal(&cfgStringy)
 	require.NoError(t, err)
 	require.Equal(t, []map[string][]string{{"key": {"1234"}}}, cfgStringy.Field)
 
-	var cfgNotStringy TargetConfig[[]map[string][]any]
+	var cfgNotStringy targetConfig[[]map[string][]any]
 	err = conf.Unmarshal(&cfgNotStringy)
 	require.NoError(t, err)
 	require.Equal(t, []map[string][]any{{"key": {1234}}}, cfgNotStringy.Field)
@@ -662,7 +662,7 @@ func TestIssue10949_UnsetVar(t *testing.T) {
 	conf, err := resolver.Resolve(context.Background())
 	require.NoError(t, err)
 
-	var cfg TargetConfig[int]
+	var cfg targetConfig[int]
 	err = conf.Unmarshal(&cfg)
 	require.NoError(t, err)
 	require.Equal(t, 0, cfg.Field)

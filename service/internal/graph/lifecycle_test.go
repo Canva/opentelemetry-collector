@@ -26,11 +26,21 @@ import (
 	"go.opentelemetry.io/collector/receiver/receivertest"
 	"go.opentelemetry.io/collector/service/internal/builders"
 	"go.opentelemetry.io/collector/service/internal/status"
-	"go.opentelemetry.io/collector/service/internal/status/statustest"
 	"go.opentelemetry.io/collector/service/pipelines"
 )
 
 func TestGraphStartStop(t *testing.T) {
+	t.Run("with_internal_telemetry", func(t *testing.T) {
+		setObsConsumerGateForTest(t, true)
+		testGraphStartStop(t)
+	})
+	t.Run("without_internal_telemetry", func(t *testing.T) {
+		setObsConsumerGateForTest(t, false)
+		testGraphStartStop(t)
+	})
+}
+
+func testGraphStartStop(t *testing.T) {
 	testCases := []struct {
 		name  string
 		edges [][2]component.ID
@@ -108,7 +118,7 @@ func TestGraphStartStop(t *testing.T) {
 			}
 
 			ctx.order = map[component.ID]int{}
-			require.NoError(t, pg.ShutdownAll(ctx, statustest.NewNopStatusReporter()))
+			require.NoError(t, pg.ShutdownAll(ctx, status.NewNopStatusReporter()))
 			for _, edge := range tt.edges {
 				assert.Less(t, ctx.order[edge[0]], ctx.order[edge[1]])
 			}
@@ -117,6 +127,17 @@ func TestGraphStartStop(t *testing.T) {
 }
 
 func TestGraphStartStopCycle(t *testing.T) {
+	t.Run("with_internal_telemetry", func(t *testing.T) {
+		setObsConsumerGateForTest(t, true)
+		testGraphStartStopCycle(t)
+	})
+	t.Run("without_internal_telemetry", func(t *testing.T) {
+		setObsConsumerGateForTest(t, false)
+		testGraphStartStopCycle(t)
+	})
+}
+
+func testGraphStartStopCycle(t *testing.T) {
 	pg := &Graph{componentGraph: simple.NewDirectedGraph()}
 
 	r1 := &testNode{id: component.MustNewIDWithName("r", "1")}
@@ -139,11 +160,22 @@ func TestGraphStartStopCycle(t *testing.T) {
 	err := pg.StartAll(context.Background(), &Host{Reporter: status.NewReporter(func(*componentstatus.InstanceID, *componentstatus.Event) {}, func(error) {})})
 	require.ErrorContains(t, err, `topo: no topological ordering: cyclic components`)
 
-	err = pg.ShutdownAll(context.Background(), statustest.NewNopStatusReporter())
+	err = pg.ShutdownAll(context.Background(), status.NewNopStatusReporter())
 	assert.ErrorContains(t, err, `topo: no topological ordering: cyclic components`)
 }
 
 func TestGraphStartStopComponentError(t *testing.T) {
+	t.Run("with_internal_telemetry", func(t *testing.T) {
+		setObsConsumerGateForTest(t, true)
+		testGraphStartStopComponentError(t)
+	})
+	t.Run("without_internal_telemetry", func(t *testing.T) {
+		setObsConsumerGateForTest(t, false)
+		testGraphStartStopComponentError(t)
+	})
+}
+
+func testGraphStartStopComponentError(t *testing.T) {
 	pg := &Graph{componentGraph: simple.NewDirectedGraph()}
 	pg.telemetry = componenttest.NewNopTelemetrySettings()
 	r1 := &testNode{
@@ -162,13 +194,24 @@ func TestGraphStartStopComponentError(t *testing.T) {
 		F: r1,
 		T: e1,
 	})
-	require.EqualError(t, pg.StartAll(context.Background(), &Host{Reporter: status.NewReporter(func(*componentstatus.InstanceID, *componentstatus.Event) {}, func(error) {})}), "foo")
-	assert.EqualError(t, pg.ShutdownAll(context.Background(), statustest.NewNopStatusReporter()), "bar")
+	require.ErrorIs(t, pg.StartAll(context.Background(), &Host{Reporter: status.NewReporter(func(*componentstatus.InstanceID, *componentstatus.Event) {}, func(error) {})}), r1.startErr)
+	assert.EqualError(t, pg.ShutdownAll(context.Background(), status.NewNopStatusReporter()), "bar")
 }
 
 // This includes all tests from the previous implementation, plus a new one
 // relevant only to the new graph-based implementation.
 func TestGraphFailToStartAndShutdown(t *testing.T) {
+	t.Run("with_internal_telemetry", func(t *testing.T) {
+		setObsConsumerGateForTest(t, true)
+		testGraphFailToStartAndShutdown(t)
+	})
+	t.Run("without_internal_telemetry", func(t *testing.T) {
+		setObsConsumerGateForTest(t, false)
+		testGraphFailToStartAndShutdown(t)
+	})
+}
+
+func testGraphFailToStartAndShutdown(t *testing.T) {
 	errReceiverFactory := newErrReceiverFactory()
 	errProcessorFactory := newErrProcessorFactory()
 	errExporterFactory := newErrExporterFactory()
@@ -232,7 +275,7 @@ func TestGraphFailToStartAndShutdown(t *testing.T) {
 			pipelines, err := Build(context.Background(), set)
 			require.NoError(t, err)
 			require.Error(t, pipelines.StartAll(context.Background(), &Host{Reporter: status.NewReporter(func(*componentstatus.InstanceID, *componentstatus.Event) {}, func(error) {})}))
-			assert.Error(t, pipelines.ShutdownAll(context.Background(), statustest.NewNopStatusReporter()))
+			assert.Error(t, pipelines.ShutdownAll(context.Background(), status.NewNopStatusReporter()))
 		})
 
 		t.Run(dt.String()+"/processor", func(t *testing.T) {
@@ -246,7 +289,7 @@ func TestGraphFailToStartAndShutdown(t *testing.T) {
 			pipelines, err := Build(context.Background(), set)
 			require.NoError(t, err)
 			require.Error(t, pipelines.StartAll(context.Background(), &Host{Reporter: status.NewReporter(func(*componentstatus.InstanceID, *componentstatus.Event) {}, func(error) {})}))
-			assert.Error(t, pipelines.ShutdownAll(context.Background(), statustest.NewNopStatusReporter()))
+			assert.Error(t, pipelines.ShutdownAll(context.Background(), status.NewNopStatusReporter()))
 		})
 
 		t.Run(dt.String()+"/exporter", func(t *testing.T) {
@@ -260,7 +303,7 @@ func TestGraphFailToStartAndShutdown(t *testing.T) {
 			pipelines, err := Build(context.Background(), set)
 			require.NoError(t, err)
 			require.Error(t, pipelines.StartAll(context.Background(), &Host{Reporter: status.NewReporter(func(*componentstatus.InstanceID, *componentstatus.Event) {}, func(error) {})}))
-			assert.Error(t, pipelines.ShutdownAll(context.Background(), statustest.NewNopStatusReporter()))
+			assert.Error(t, pipelines.ShutdownAll(context.Background(), status.NewNopStatusReporter()))
 		})
 
 		for _, dt2 := range dataTypes {
@@ -280,13 +323,24 @@ func TestGraphFailToStartAndShutdown(t *testing.T) {
 				pipelines, err := Build(context.Background(), set)
 				require.NoError(t, err)
 				require.Error(t, pipelines.StartAll(context.Background(), &Host{Reporter: status.NewReporter(func(*componentstatus.InstanceID, *componentstatus.Event) {}, func(error) {})}))
-				assert.Error(t, pipelines.ShutdownAll(context.Background(), statustest.NewNopStatusReporter()))
+				assert.Error(t, pipelines.ShutdownAll(context.Background(), status.NewNopStatusReporter()))
 			})
 		}
 	}
 }
 
 func TestStatusReportedOnStartupShutdown(t *testing.T) {
+	t.Run("with_internal_telemetry", func(t *testing.T) {
+		setObsConsumerGateForTest(t, true)
+		testStatusReportedOnStartupShutdown(t)
+	})
+	t.Run("without_internal_telemetry", func(t *testing.T) {
+		setObsConsumerGateForTest(t, false)
+		testStatusReportedOnStartupShutdown(t)
+	})
+}
+
+func testStatusReportedOnStartupShutdown(t *testing.T) {
 	rNoErr := &testNode{id: component.MustNewIDWithName("r_no_err", "1")}
 	rStErr := &testNode{id: component.MustNewIDWithName("r_st_err", "1"), startErr: assert.AnError}
 	rSdErr := &testNode{id: component.MustNewIDWithName("r_sd_err", "1"), shutdownErr: assert.AnError}
@@ -306,10 +360,10 @@ func TestStatusReportedOnStartupShutdown(t *testing.T) {
 
 	// compare two maps of status events ignoring timestamp
 	assertEqualStatuses := func(t *testing.T, evMap1, evMap2 map[*componentstatus.InstanceID][]*componentstatus.Event) {
-		assert.Equal(t, len(evMap1), len(evMap2))
+		assert.Len(t, evMap2, len(evMap1))
 		for id, evts1 := range evMap1 {
 			evts2 := evMap2[id]
-			assert.Equal(t, len(evts1), len(evts2))
+			assert.Len(t, evts2, len(evts1))
 			for i := 0; i < len(evts1); i++ {
 				ev1 := evts1[i]
 				ev2 := evts2[i]
@@ -351,6 +405,8 @@ func TestStatusReportedOnStartupShutdown(t *testing.T) {
 				instanceIDs[eStErr]: {
 					componentstatus.NewEvent(componentstatus.StatusStarting),
 					componentstatus.NewPermanentErrorEvent(assert.AnError),
+					componentstatus.NewEvent(componentstatus.StatusStopping),
+					componentstatus.NewEvent(componentstatus.StatusStopped),
 				},
 			},
 			startupErr: assert.AnError,
@@ -362,6 +418,8 @@ func TestStatusReportedOnStartupShutdown(t *testing.T) {
 				instanceIDs[rStErr]: {
 					componentstatus.NewEvent(componentstatus.StatusStarting),
 					componentstatus.NewPermanentErrorEvent(assert.AnError),
+					componentstatus.NewEvent(componentstatus.StatusStopping),
+					componentstatus.NewEvent(componentstatus.StatusStopped),
 				},
 				instanceIDs[eNoErr]: {
 					componentstatus.NewEvent(componentstatus.StatusStarting),
@@ -428,7 +486,7 @@ func TestStatusReportedOnStartupShutdown(t *testing.T) {
 			}
 			pg.componentGraph.SetEdge(simple.Edge{F: e0, T: e1})
 
-			assert.Equal(t, tt.startupErr, pg.StartAll(context.Background(), &Host{Reporter: rep}))
+			require.ErrorIs(t, pg.StartAll(context.Background(), &Host{Reporter: rep}), tt.startupErr)
 			assert.Equal(t, tt.shutdownErr, pg.ShutdownAll(context.Background(), rep))
 			assertEqualStatuses(t, tt.expectedStatuses, actualStatuses)
 		})

@@ -4,6 +4,7 @@
 package component // import "go.opentelemetry.io/collector/component"
 
 import (
+	"encoding"
 	"errors"
 	"fmt"
 	"regexp"
@@ -26,6 +27,8 @@ var (
 	nameRegexp = regexp.MustCompile(`^[^\pZ\pC\pS]+$`)
 )
 
+var _ fmt.Stringer = Type{}
+
 // Type is the component type as it is used in the config.
 type Type struct {
 	name string
@@ -47,7 +50,7 @@ func (t Type) MarshalText() ([]byte, error) {
 // - start with an ASCII alphabetic character and
 // - can only contain ASCII alphanumeric characters and '_'.
 func NewType(ty string) (Type, error) {
-	if len(ty) == 0 {
+	if ty == "" {
 		return Type{}, errors.New("id must not be empty")
 	}
 	if !typeRegexp.MatchString(ty) {
@@ -69,6 +72,12 @@ func MustNewType(strType string) Type {
 	return ty
 }
 
+var (
+	_ fmt.Stringer             = ID{}
+	_ encoding.TextMarshaler   = ID{}
+	_ encoding.TextUnmarshaler = (*ID)(nil)
+)
+
 // ID represents the identity for a component. It combines two values:
 // * type - the Type of the component.
 // * name - the name of that component.
@@ -84,9 +93,10 @@ func NewID(typeVal Type) ID {
 }
 
 // MustNewID builds a Type and returns a new ID with the given Type and empty name.
+// This is equivalent to NewID(MustNewType(typeVal)).
 // See MustNewType to check the valid values of typeVal.
 func MustNewID(typeVal string) ID {
-	return ID{typeVal: MustNewType(typeVal)}
+	return NewID(MustNewType(typeVal))
 }
 
 // NewIDWithName returns a new ID with the given Type and name.
@@ -95,9 +105,10 @@ func NewIDWithName(typeVal Type, nameVal string) ID {
 }
 
 // MustNewIDWithName builds a Type and returns a new ID with the given Type and name.
+// This is equivalent to NewIDWithName(MustNewType(typeVal), nameVal).
 // See MustNewType to check the valid values of typeVal.
-func MustNewIDWithName(typeVal string, nameVal string) ID {
-	return ID{typeVal: MustNewType(typeVal), nameVal: nameVal}
+func MustNewIDWithName(typeVal, nameVal string) ID {
+	return NewIDWithName(MustNewType(typeVal), nameVal)
 }
 
 // Type returns the type of the component.
@@ -112,30 +123,26 @@ func (id ID) Name() string {
 
 // MarshalText implements the encoding.TextMarshaler interface.
 // This marshals the type and name as one string in the config.
-func (id ID) MarshalText() (text []byte, err error) {
+func (id ID) MarshalText() ([]byte, error) {
 	return []byte(id.String()), nil
 }
 
 // UnmarshalText implements the encoding.TextUnmarshaler interface.
 func (id *ID) UnmarshalText(text []byte) error {
 	idStr := string(text)
-	items := strings.SplitN(idStr, typeAndNameSeparator, 2)
-	var typeStr, nameStr string
-	if len(items) >= 1 {
-		typeStr = strings.TrimSpace(items[0])
-	}
+	typeStr, nameStr, hasName := strings.Cut(idStr, typeAndNameSeparator)
+	typeStr = strings.TrimSpace(typeStr)
 
-	if len(items) == 1 && typeStr == "" {
+	if typeStr == "" {
+		if hasName {
+			return fmt.Errorf("in %q id: the part before %s should not be empty", idStr, typeAndNameSeparator)
+		}
 		return errors.New("id must not be empty")
 	}
 
-	if typeStr == "" {
-		return fmt.Errorf("in %q id: the part before %s should not be empty", idStr, typeAndNameSeparator)
-	}
-
-	if len(items) > 1 {
+	if hasName {
 		// "name" part is present.
-		nameStr = strings.TrimSpace(items[1])
+		nameStr = strings.TrimSpace(nameStr)
 		if nameStr == "" {
 			return fmt.Errorf("in %q id: the part after %s should not be empty", idStr, typeAndNameSeparator)
 		}

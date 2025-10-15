@@ -12,6 +12,8 @@ import (
 
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
+
+	"go.opentelemetry.io/collector/confmap/internal"
 )
 
 // follows drive-letter specification:
@@ -55,6 +57,9 @@ type ResolverSettings struct {
 	// ConverterSettings contains settings that will be passed to Converter
 	// factories when instantiating Converters.
 	ConverterSettings ConverterSettings
+
+	// prevent unkeyed literal initialization
+	_ struct{}
 }
 
 // NewResolver returns a new Resolver that resolves configuration from multiple URIs.
@@ -170,14 +175,16 @@ func (mr *Resolver) Resolve(ctx context.Context) (*Conf, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err = retMap.Merge(retCfgMap); err != nil {
+
+		if err := retMap.Merge(retCfgMap); err != nil {
 			return nil, err
 		}
 	}
 
 	cfgMap := make(map[string]any)
 	for _, k := range retMap.AllKeys() {
-		val, err := mr.expandValueRecursively(ctx, retMap.unsanitizedGet(k))
+		ug := internal.UnsanitizedGetter{Conf: retMap}
+		val, err := mr.expandValueRecursively(ctx, ug.UnsanitizedGet(k))
 		if err != nil {
 			return nil, err
 		}
@@ -199,7 +206,7 @@ func escapeDollarSigns(val any) any {
 	switch v := val.(type) {
 	case string:
 		return strings.ReplaceAll(v, "$$", "$")
-	case expandedValue:
+	case internal.ExpandedValue:
 		v.Original = strings.ReplaceAll(v.Original, "$$", "$")
 		v.Value = escapeDollarSigns(v.Value)
 		return v

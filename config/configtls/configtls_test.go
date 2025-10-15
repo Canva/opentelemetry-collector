@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/collector/config/configopaque"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
 )
 
 func TestNewDefaultConfig(t *testing.T) {
@@ -345,15 +346,11 @@ func TestLoadTLSServerConfigReload(t *testing.T) {
 
 	overwriteClientCA(t, tmpCaPath, "ca-2.crt")
 
-	assert.Eventually(t, func() bool {
-		_, loadError := tlsCfg.GetConfigForClient(nil)
-		return loadError == nil
+	assert.EventuallyWithT(t, func(t *assert.CollectT) {
+		secondClient, err := tlsCfg.GetConfigForClient(nil)
+		require.NoError(t, err)
+		assert.NotEqual(t, firstClient.ClientCAs, secondClient.ClientCAs)
 	}, 5*time.Second, 10*time.Millisecond)
-
-	secondClient, err := tlsCfg.GetConfigForClient(nil)
-	require.NoError(t, err)
-
-	assert.NotEqual(t, firstClient.ClientCAs, secondClient.ClientCAs)
 }
 
 func TestLoadTLSServerConfigFailingReload(t *testing.T) {
@@ -440,7 +437,7 @@ func TestLoadTLSServerConfigFailing(t *testing.T) {
 	assert.NotNil(t, firstClient)
 }
 
-func overwriteClientCA(t *testing.T, targetFilePath string, testdataFileName string) {
+func overwriteClientCA(t *testing.T, targetFilePath, testdataFileName string) {
 	targetFile, err := os.OpenFile(filepath.Clean(targetFilePath), os.O_RDWR, 0o600)
 	require.NoError(t, err)
 
@@ -456,7 +453,7 @@ func overwriteClientCA(t *testing.T, targetFilePath string, testdataFileName str
 }
 
 func createTempClientCaFile(t *testing.T) string {
-	tmpCa, err := os.CreateTemp("", "ca-tmp.crt")
+	tmpCa, err := os.CreateTemp(t.TempDir(), "ca-tmp.crt")
 	require.NoError(t, err)
 	tmpCaPath, err := filepath.Abs(tmpCa.Name())
 	assert.NoError(t, err)
@@ -533,18 +530,20 @@ func TestCertificateReload(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			// Copy certs into a temp dir so we can safely modify them
-			certFile, err := os.CreateTemp("", "cert")
+			tempDir := t.TempDir()
+			certFile, err := os.CreateTemp(tempDir, "cert")
 			require.NoError(t, err)
-			defer os.Remove(certFile.Name())
+			defer certFile.Close()
 
-			keyFile, err := os.CreateTemp("", "key")
+			keyFile, err := os.CreateTemp(tempDir, "key")
 			require.NoError(t, err)
-			defer os.Remove(keyFile.Name())
+			defer keyFile.Close()
 
 			fdc, err := os.Open(filepath.Join("testdata", "client-1.crt"))
 			require.NoError(t, err)
 			_, err = io.Copy(certFile, fdc)
 			require.NoError(t, err)
+			require.NoError(t, fdc.Close())
 
 			fdk, err := os.Open(filepath.Join("testdata", "client-1.key"))
 			require.NoError(t, err)
@@ -666,6 +665,16 @@ func TestConfigValidate(t *testing.T) {
 		{name: `TLS Config ["0.4", ""] to give [Error]`, tlsConfig: Config{MinVersion: "0.4", MaxVersion: ""}, errorTxt: `invalid TLS min_version: unsupported TLS version: "0.4"`},
 		{name: `TLS Config ["1.2", "1.1"] to give [Error]`, tlsConfig: Config{MinVersion: "1.2", MaxVersion: "1.1"}, errorTxt: `invalid TLS configuration: min_version cannot be greater than max_version`},
 		{name: `TLS Config with both CA File and PEM`, tlsConfig: Config{CAFile: "test", CAPem: "test"}, errorTxt: `provide either a CA file or the PEM-encoded string, but not both`},
+		{name: `TLS Config with cert file but no key`, tlsConfig: Config{CertFile: "cert.pem"}, errorTxt: `TLS configuration must include both certificate and key (CertFile/CertPem and KeyFile/KeyPem)`},
+		{name: `TLS Config with key file but no cert`, tlsConfig: Config{KeyFile: "key.pem"}, errorTxt: `TLS configuration must include both certificate and key (CertFile/CertPem and KeyFile/KeyPem)`},
+		{name: `TLS Config with cert PEM but no key`, tlsConfig: Config{CertPem: "cert-pem"}, errorTxt: `TLS configuration must include both certificate and key (CertFile/CertPem and KeyFile/KeyPem)`},
+		{name: `TLS Config with key PEM but no cert`, tlsConfig: Config{KeyPem: "key-pem"}, errorTxt: `TLS configuration must include both certificate and key (CertFile/CertPem and KeyFile/KeyPem)`},
+		{name: `TLS Config with both cert file and cert PEM`, tlsConfig: Config{CertFile: "cert.pem", CertPem: "cert-pem", KeyFile: "key.pem"}, errorTxt: `provide either certificate file or PEM, but not both`},
+		{name: `TLS Config with both key file and key PEM`, tlsConfig: Config{CertFile: "cert.pem", KeyFile: "key.pem", KeyPem: "key-pem"}, errorTxt: `provide either key file or PEM, but not both`},
+		{name: `TLS Config with cert file and key PEM`, tlsConfig: Config{CertFile: "cert.pem", KeyPem: "key-pem"}},
+		{name: `TLS Config with cert PEM and key file`, tlsConfig: Config{CertPem: "cert-pem", KeyFile: "key.pem"}},
+		{name: `TLS Config with valid cert and key files`, tlsConfig: Config{CertFile: "cert.pem", KeyFile: "key.pem"}},
+		{name: `TLS Config with valid cert and key PEM`, tlsConfig: Config{CertPem: "cert-pem", KeyPem: "key-pem"}},
 	}
 
 	for _, test := range tests {
@@ -867,6 +876,257 @@ func TestSystemCertPool_loadCert(t *testing.T) {
 				assert.Equal(t, test.wantErr, err)
 			} else {
 				assert.NotNil(t, certPool)
+			}
+		})
+	}
+}
+
+func TestCurvePreferences(t *testing.T) {
+	tests := []struct {
+		name             string
+		preferences      []string
+		expectedCurveIDs []tls.CurveID
+		expectedErr      string
+	}{
+		{
+			name:             "X25519MLKEM768",
+			preferences:      []string{"X25519MLKEM768"},
+			expectedCurveIDs: []tls.CurveID{tls.X25519MLKEM768},
+		},
+		{
+			name:             "X25519",
+			preferences:      []string{"X25519"},
+			expectedCurveIDs: []tls.CurveID{tls.X25519},
+		},
+		{
+			name:             "P521",
+			preferences:      []string{"P521"},
+			expectedCurveIDs: []tls.CurveID{tls.CurveP521},
+		},
+		{
+			name:             "P-256",
+			preferences:      []string{"P256"},
+			expectedCurveIDs: []tls.CurveID{tls.CurveP256},
+		},
+		{
+			name:             "multiple",
+			preferences:      []string{"P256", "P521", "X25519"},
+			expectedCurveIDs: []tls.CurveID{tls.CurveP256, tls.CurveP521, tls.X25519},
+		},
+		{
+			name:             "invalid-curve",
+			preferences:      []string{"P25223236"},
+			expectedCurveIDs: []tls.CurveID{},
+			expectedErr:      "invalid curve type",
+		},
+	}
+	for _, test := range tests {
+		tlsSetting := ClientConfig{
+			Config: Config{
+				CurvePreferences: test.preferences,
+			},
+		}
+		config, err := tlsSetting.LoadTLSConfig(context.Background())
+		if test.expectedErr == "" {
+			require.NoError(t, err)
+			require.ElementsMatchf(t, test.expectedCurveIDs, config.CurvePreferences, "expected %v, got %v", test.expectedCurveIDs, config.CurvePreferences)
+		} else {
+			require.ErrorContains(t, err, test.expectedErr)
+		}
+	}
+}
+
+func TestServerConfigValidate(t *testing.T) {
+	tests := []struct {
+		name         string
+		serverConfig ServerConfig
+		errorTxt     string
+	}{
+		{
+			name:         "server config without certificates",
+			serverConfig: ServerConfig{},
+			errorTxt:     "TLS configuration must include both certificate and key for server connections",
+		},
+		{
+			name: "server config with cert file but no key",
+			serverConfig: ServerConfig{
+				Config: Config{
+					CertFile: "cert.pem",
+				},
+			},
+			errorTxt: "config: TLS configuration must include both certificate and key (CertFile/CertPem and KeyFile/KeyPem)",
+		},
+		{
+			name: "server config with key file but no cert",
+			serverConfig: ServerConfig{
+				Config: Config{
+					KeyFile: "key.pem",
+				},
+			},
+			errorTxt: "config: TLS configuration must include both certificate and key (CertFile/CertPem and KeyFile/KeyPem)",
+		},
+		{
+			name: "server config with cert PEM but no key",
+			serverConfig: ServerConfig{
+				Config: Config{
+					CertPem: "cert-pem",
+				},
+			},
+			errorTxt: "config: TLS configuration must include both certificate and key (CertFile/CertPem and KeyFile/KeyPem)",
+		},
+		{
+			name: "server config with key PEM but no cert",
+			serverConfig: ServerConfig{
+				Config: Config{
+					KeyPem: "key-pem",
+				},
+			},
+			errorTxt: "config: TLS configuration must include both certificate and key (CertFile/CertPem and KeyFile/KeyPem)",
+		},
+		{
+			name: "server config with both cert file and cert PEM",
+			serverConfig: ServerConfig{
+				Config: Config{
+					CertFile: "cert.pem",
+					CertPem:  "cert-pem",
+					KeyFile:  "key.pem",
+				},
+			},
+			errorTxt: "config: provide either certificate file or PEM, but not both",
+		},
+		{
+			name: "server config with both key file and key PEM",
+			serverConfig: ServerConfig{
+				Config: Config{
+					CertFile: "cert.pem",
+					KeyFile:  "key.pem",
+					KeyPem:   "key-pem",
+				},
+			},
+			errorTxt: "config: provide either key file or PEM, but not both",
+		},
+		{
+			name: "valid server config with cert and key files",
+			serverConfig: ServerConfig{
+				Config: Config{
+					CertFile: "cert.pem",
+					KeyFile:  "key.pem",
+				},
+			},
+		},
+		{
+			name: "valid server config with cert and key PEM",
+			serverConfig: ServerConfig{
+				Config: Config{
+					CertPem: "cert-pem",
+					KeyPem:  "key-pem",
+				},
+			},
+		},
+		{
+			name: "valid server config with mixed cert file and key PEM",
+			serverConfig: ServerConfig{
+				Config: Config{
+					CertFile: "cert.pem",
+					KeyPem:   "key-pem",
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := xconfmap.Validate(test.serverConfig)
+
+			if test.errorTxt == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.ErrorContains(t, err, test.errorTxt)
+			}
+		})
+	}
+}
+
+func TestClientConfigValidate(t *testing.T) {
+	tests := []struct {
+		name         string
+		clientConfig ClientConfig
+		errorTxt     string
+	}{
+		{
+			name:         "valid empty client config",
+			clientConfig: ClientConfig{},
+		},
+		{
+			name: "valid client config with insecure connection",
+			clientConfig: ClientConfig{
+				Insecure: true,
+			},
+		},
+		{
+			name: "valid client config with cert and key files",
+			clientConfig: ClientConfig{
+				Config: Config{
+					CertFile: "cert.pem",
+					KeyFile:  "key.pem",
+				},
+			},
+		},
+		{
+			name: "valid client config with mixed cert file and key PEM",
+			clientConfig: ClientConfig{
+				Config: Config{
+					CertFile: "cert.pem",
+					KeyPem:   "key-pem",
+				},
+			},
+		},
+		{
+			name: "client config with only cert file",
+			clientConfig: ClientConfig{
+				Config: Config{
+					CertFile: "cert.pem",
+				},
+			},
+			errorTxt: "config: TLS configuration must include both certificate and key (CertFile/CertPem and KeyFile/KeyPem)",
+		},
+		{
+			name: "client config with only key file",
+			clientConfig: ClientConfig{
+				Config: Config{
+					KeyFile: "key.pem",
+				},
+			},
+			errorTxt: "config: TLS configuration must include both certificate and key (CertFile/CertPem and KeyFile/KeyPem)",
+		},
+		{
+			name: "client config with only cert PEM",
+			clientConfig: ClientConfig{
+				Config: Config{
+					CertPem: "cert-pem",
+				},
+			},
+			errorTxt: "config: TLS configuration must include both certificate and key (CertFile/CertPem and KeyFile/KeyPem)",
+		},
+		{
+			name: "client config with only key PEM",
+			clientConfig: ClientConfig{
+				Config: Config{
+					KeyPem: "key-pem",
+				},
+			},
+			errorTxt: "config: TLS configuration must include both certificate and key (CertFile/CertPem and KeyFile/KeyPem)",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := xconfmap.Validate(test.clientConfig)
+
+			if test.errorTxt == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.ErrorContains(t, err, test.errorTxt)
 			}
 		})
 	}

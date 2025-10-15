@@ -5,7 +5,7 @@
 The collector should be observable and this must naturally include observability of its pipeline components. Pipeline components
 are those components of the collector which directly interact with data, specifically receivers, processors, exporters, and connectors.
 
-It is understood that each _type_ (`filelog`, `batch`, etc) of component may emit telemetry describing its internal workings,
+It is understood that each _type_ (`filelog`, `otlp`, etc) of component may emit telemetry describing its internal workings,
 and that these internally derived signals may vary greatly based on the concerns and maturity of each component. Naturally
 though, there is much we can do to normalize the telemetry emitted from and about pipeline components.
 
@@ -19,7 +19,7 @@ be automatically captured for each kind of pipeline component.
 
 ## Goals
 
-1. Define attributes that are (A) specific enough to describe individual component[_instances_](https://github.com/open-telemetry/opentelemetry-collector/issues/10534)
+1. Define attributes that are (A) specific enough to describe individual component [_instances_](https://github.com/open-telemetry/opentelemetry-collector/issues/10534)
    and (B) consistent enough for correlation across signals.
 2. Articulate a mechanism which enables us to _automatically_ capture telemetry from _all pipeline components_.
 3. Define specific metrics for each kind of pipeline component.
@@ -27,7 +27,7 @@ be automatically captured for each kind of pipeline component.
 
 ## Attributes
 
-All signals should use the following attributes:
+Traces, logs, and metrics should carry the following instrumentation scope attributes:
 
 ### Receivers
 
@@ -46,18 +46,20 @@ All signals should use the following attributes:
 
 - `otelcol.component.kind`: `exporter`
 - `otelcol.component.id`: The component ID
-- `otelcol.signal`: `logs`, `metrics` `traces`, `profiles`
+- `otelcol.signal`: `logs`, `metrics`, `traces`, `profiles`
 
 ### Connectors
 
 - `otelcol.component.kind`: `connector`
 - `otelcol.component.id`: The component ID
 - `otelcol.signal`: `logs`, `metrics` `traces`
-- `otelcol.signal.output`: `logs`, `metrics` `traces`, `profiles`
+- `otelcol.signal.output`: `logs`, `metrics`, `traces`, `profiles`
 
 Note: The `otelcol.signal`, `otelcol.signal.output`, or `otelcol.pipeline.id` attributes may be omitted if the corresponding component instances
 are unified by the component implementation. For example, the `otlp` receiver is a singleton, so its telemetry is not specific to a signal.
 Similarly, the `memory_limiter` processor is a singleton, so its telemetry is not specific to a pipeline.
+
+These instrumentation scope attributes are automatically injected into the telemetry associated with a component, by wrapping the Logger, TracerProvider, and MeterProvider provided to it.
 
 ## Auto-Instrumentation Mechanism
 
@@ -67,8 +69,8 @@ component graph, every _edge_ in the graph will have two layers of instrumentati
 consuming component. Importantly, each layer generates telemetry ascribed to a single component instance, so by having two layers per
 edge we can describe both sides of each handoff independently.
 
-Telemetry captured by this mechanism should be associated with an instrumentation scope corresponding to the package which implements
-the mechanism. Currently, that package is `service/internal/graph`, but this may change in the future. Notably, this telemetry is not
+Telemetry captured by this mechanism should be associated with an instrumentation scope with a name corresponding to the package which implements
+the mechanism. Currently, that package is `go.opentelemetry.io/collector/service`, but this may change in the future. Notably, this telemetry is not
 ascribed to individual component packages, both because the instrumentation scope is intended to describe the origin of the telemetry,
 and because no mechanism is presently identified which would allow us to determine the characteristics of a component-specific scope.
 
@@ -90,11 +92,17 @@ The location of these measurements can be described in terms of whether the data
 component to which the telemetry is attributed. Metrics which contain the term "produced" describe data which is emitted from the component,
 while metrics which contain the term "consumed" describe data which is received by the component.
 
-For both metrics, an `outcome` attribute with possible values `success` and `failure` should be automatically recorded, corresponding to
-whether or not the corresponding function call returned an error. Specifically, consumed measurements will be recorded with `outcome` as
-`failure` when a call from the previous component the `ConsumeX` function returns an error, and `success` otherwise. Likewise, produced
-measurements will be recorded with `outcome` as `failure` when a call to the next consumer's `ConsumeX` function returns an error, and
-`success` otherwise.
+For both metrics, an `otelcol.component.outcome` attribute with possible values `success`, `failure`, and `refused` should be automatically recorded,
+based on whether the corresponding function call returned successfully, returned an error originating from the associated component, or propagated an error from a component further downstream.
+
+Specifically, a call to `ConsumeX` is recorded with:
+- `otelcol.component.outcome = success` if the call returns `nil`;
+- `otelcol.component.outcome = failure` if the call returns a regular error;
+- `otelcol.component.outcome = refused` if the call returns an error tagged as coming from downstream.
+
+After inspecting the error, the instrumentation layer should tag it as coming from downstream before returning it to the caller. Since there are two instrumentation layers between each pair of successive components (one recording produced data and one recording consumed data), this means that a call recorded with `outcome = failure` by the "consumer" layer will be recorded with `outcome = refused` by the "producer" layer, reflecting the fact that only the "consumer" component failed. In all other cases, the `outcome` recorded by both layers should be identical.
+
+Errors should be "tagged as coming from downstream" the same way permanent errors are currently handled: they can be wrapped in a `type downstreamError struct { err error }` wrapper error type, then checked with `errors.As`. Note that care may need to be taken when dealing with the `multiError`s returned by the `fanoutconsumer`. If PR #11085 introducing a single generic `Error` type is merged, an additional `downstream bool` field can be added to it to serve the same purpose instead.
 
 ```yaml
     otelcol.receiver.produced.items:
@@ -140,7 +148,7 @@ measurements will be recorded with `outcome` as `failure` when a call to the nex
         value_type: int
         monotonic: true
 
-   otelcol.receiver.produced.size:
+    otelcol.receiver.produced.size:
       enabled: false
       description: Size of items emitted from the receiver.
       unit: "By"
@@ -184,10 +192,15 @@ measurements will be recorded with `outcome` as `failure` when a call to the nex
         monotonic: true
 ```
 
+#### Additional Attribute for Connectors
+
+Connectors can route telemetry to specific pipelines. Therefore, `otelcol.connector.produced.*` metrics should carry an
+additional data point attribute, `otelcol.pipeline.id`, to describe the pipeline ID to which the data is sent.
+
 ### Auto-Instrumented Logs
 
 Metrics provide most of the observability we need but there are some gaps which logs can fill. Although metrics would describe the overall
-item counts, it is helpful in some cases to record more granular events. e.g. If a produced batch of 10,000 spans results in an error, but
+item counts, it is helpful in some cases to record more granular events. For example, if a produced batch of 10,000 spans results in an error, but
 100 batches of 100 spans succeed, this may be a matter of batch size that can be detected by analyzing logs, while the corresponding metric
 reports only that a 50% success rate is observed.
 
@@ -196,8 +209,8 @@ For security and performance reasons, it would not be appropriate to log the con
 It's very easy for logs to become too noisy. Even if errors are occurring frequently in the data pipeline, only the errors that are not
 handled automatically will be of interest to most users.
 
-With the above considerations, this proposal includes only that we add a DEBUG log for each individual outcome. This should be sufficient for
-detailed troubleshooting but does not impact users otherwise.
+With the above considerations, this proposal includes only that we add a DEBUG log for each error, with the attributes from the corresponding 
+metrics as well as the error message and item count. This should be sufficient for detailed troubleshooting but does not impact users otherwise.
 
 In the future, it may be helpful to define triggers for reporting repeated failures at a higher severity level. e.g. N number of failures in
 a row, or a moving average success %. For now, the criteria and necessary configurability is unclear so this is mentioned only as an example

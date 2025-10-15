@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.opentelemetry.io/collector/pdata/xpdata/pref"
 	"go.opentelemetry.io/collector/processor"
 )
 
@@ -177,6 +178,7 @@ func (bp *batchProcessor[T]) Shutdown(context.Context) error {
 
 	// Wait until all goroutines are done.
 	bp.goroutines.Wait()
+
 	return nil
 }
 
@@ -258,16 +260,22 @@ func (b *shard[T]) resetTimer() {
 func (b *shard[T]) sendItems(trigger trigger) {
 	sent, req := b.batch.split(b.processor.sendBatchMaxSize)
 
+	bpt := b.processor.telemetry
+	var bytes int
+	// Check if the instrument is enabled to calculate the size of the batch in bytes.
+	// See https://pkg.go.dev/go.opentelemetry.io/otel/sdk/metric/internal/x#readme-instrument-enabled
+	batchSendSizeBytes := bpt.telemetryBuilder.ProcessorBatchBatchSendSizeBytes
+	instr, ok := batchSendSizeBytes.(interface{ Enabled(context.Context) bool })
+	if !ok || instr.Enabled(bpt.exportCtx) {
+		bytes = b.batch.sizeBytes(req)
+	}
+
 	err := b.batch.export(b.exportCtx, req)
 	if err != nil {
 		b.processor.logger.Warn("Sender failed", zap.Error(err))
 		return
 	}
-	var bytes int
-	if b.processor.telemetry.detailed {
-		bytes = b.batch.sizeBytes(req)
-	}
-	b.processor.telemetry.record(trigger, int64(sent), int64(bytes))
+	bpt.record(trigger, int64(sent), int64(bytes))
 }
 
 // singleShardBatcher is used when metadataKeys is empty, to avoid the
@@ -378,6 +386,7 @@ func newTracesBatchProcessor(set processor.Settings, next consumer.Traces, cfg *
 }
 
 func (t *tracesBatchProcessor) ConsumeTraces(ctx context.Context, td ptrace.Traces) error {
+	pref.RefTraces(td)
 	return t.batcher.consume(ctx, td)
 }
 
@@ -396,6 +405,7 @@ func newMetricsBatchProcessor(set processor.Settings, next consumer.Metrics, cfg
 
 // ConsumeMetrics implements processor.Metrics
 func (m *metricsBatchProcessor) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
+	pref.RefMetrics(md)
 	return m.batcher.consume(ctx, md)
 }
 
@@ -414,6 +424,7 @@ func newLogsBatchProcessor(set processor.Settings, next consumer.Logs, cfg *Conf
 
 // ConsumeLogs implements processor.Logs
 func (l *logsBatchProcessor) ConsumeLogs(ctx context.Context, ld plog.Logs) error {
+	pref.RefLogs(ld)
 	return l.batcher.consume(ctx, ld)
 }
 
@@ -430,6 +441,7 @@ func newBatchTraces(nextConsumer consumer.Traces) *batchTraces {
 
 // add updates current batchTraces by adding new TraceData object
 func (bt *batchTraces) add(td ptrace.Traces) {
+	defer pref.UnrefTraces(td)
 	newSpanCount := td.SpanCount()
 	if newSpanCount == 0 {
 		return
@@ -508,6 +520,7 @@ func (bm *batchMetrics) itemCount() int {
 }
 
 func (bm *batchMetrics) add(md pmetric.Metrics) {
+	defer pref.UnrefMetrics(md)
 	newDataPointCount := md.DataPointCount()
 	if newDataPointCount == 0 {
 		return
@@ -557,6 +570,7 @@ func (bl *batchLogs) itemCount() int {
 }
 
 func (bl *batchLogs) add(ld plog.Logs) {
+	defer pref.UnrefLogs(ld)
 	newLogsCount := ld.LogRecordCount()
 	if newLogsCount == 0 {
 		return

@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
 	"go.opentelemetry.io/collector/pdata/testdata"
+	"go.opentelemetry.io/collector/receiver/otlpreceiver/internal/metadata"
 	"go.opentelemetry.io/collector/receiver/receiverhelper"
 	"go.opentelemetry.io/collector/receiver/receivertest"
 )
@@ -38,7 +39,7 @@ func TestExport(t *testing.T) {
 
 	lds := logSink.AllLogs()
 	require.Len(t, lds, 1)
-	assert.EqualValues(t, ld, lds[0])
+	assert.Equal(t, ld, lds[0])
 }
 
 func TestExport_EmptyRequest(t *testing.T) {
@@ -57,7 +58,7 @@ func TestExport_NonPermanentErrorConsumer(t *testing.T) {
 	logClient := makeLogsServiceClient(t, consumertest.NewErr(errors.New("my error")))
 	resp, err := logClient.Export(context.Background(), req)
 	require.EqualError(t, err, "rpc error: code = Unavailable desc = my error")
-	assert.IsType(t, status.Error(codes.Unknown, ""), err)
+	require.ErrorIs(t, err, status.Error(codes.Unavailable, "my error"))
 	assert.Equal(t, plogotlp.ExportResponse{}, resp)
 }
 
@@ -68,7 +69,7 @@ func TestExport_PermanentErrorConsumer(t *testing.T) {
 	logClient := makeLogsServiceClient(t, consumertest.NewErr(consumererror.NewPermanent(errors.New("my error"))))
 	resp, err := logClient.Export(context.Background(), req)
 	require.EqualError(t, err, "rpc error: code = Internal desc = Permanent error: my error")
-	assert.IsType(t, status.Error(codes.Unknown, ""), err)
+	require.ErrorIs(t, err, status.Error(codes.Internal, "Permanent error: my error"))
 	assert.Equal(t, plogotlp.ExportResponse{}, resp)
 }
 
@@ -91,7 +92,7 @@ func otlpReceiverOnGRPCServer(t *testing.T, lc consumer.Logs) net.Addr {
 		require.NoError(t, ln.Close())
 	})
 
-	set := receivertest.NewNopSettings()
+	set := receivertest.NewNopSettings(metadata.Type)
 	set.ID = component.MustNewIDWithName("otlp", "log")
 	obsreport, err := receiverhelper.NewObsReport(receiverhelper.ObsReportSettings{
 		ReceiverID:             set.ID,

@@ -19,12 +19,30 @@ type textProfilesMarshaler struct{}
 // MarshalProfiles pprofile.Profiles to OTLP text.
 func (textProfilesMarshaler) MarshalProfiles(pd pprofile.Profiles) ([]byte, error) {
 	buf := dataBuffer{}
+	dic := pd.Dictionary()
 	rps := pd.ResourceProfiles()
+
+	buf.logProfileMappings(dic.MappingTable())
+	buf.logProfileLocations(dic.LocationTable())
+	buf.logProfileFunctions(dic.FunctionTable())
+	buf.logAttributesWithIndentation(
+		"Attribute table",
+		keyValueAndUnitsToMap(dic.AttributeTable()),
+		0)
+
+	buf.logAttributesWithIndentation(
+		"Link table",
+		linkTableToMap(dic.LinkTable()),
+		0)
+
+	buf.logStringTable(dic.StringTable())
+
 	for i := 0; i < rps.Len(); i++ {
 		buf.logEntry("ResourceProfiles #%d", i)
 		rp := rps.At(i)
 		buf.logEntry("Resource SchemaURL: %s", rp.SchemaUrl())
 		buf.logAttributes("Resource attributes", rp.Resource().Attributes())
+		buf.logEntityRefs(rp.Resource())
 		ilps := rp.ScopeProfiles()
 		for j := 0; j < ilps.Len(); j++ {
 			buf.logEntry("ScopeProfiles #%d", j)
@@ -38,26 +56,9 @@ func (textProfilesMarshaler) MarshalProfiles(pd pprofile.Profiles) ([]byte, erro
 				buf.logAttr("Profile ID", profile.ProfileID())
 				buf.logAttr("Start time", profile.Time().String())
 				buf.logAttr("Duration", profile.Duration().String())
-				buf.logAttributes("Attributes", profile.Attributes())
 				buf.logAttr("Dropped attributes count", strconv.FormatUint(uint64(profile.DroppedAttributesCount()), 10))
-				buf.logEntry("    Location indices: %d", profile.LocationIndices().AsRaw())
 
-				buf.logProfileSamples(profile.Sample(), profile.AttributeTable())
-				buf.logProfileMappings(profile.MappingTable())
-				buf.logProfileLocations(profile.LocationTable())
-				buf.logProfileFunctions(profile.FunctionTable())
-
-				buf.logAttributesWithIndentation(
-					"Attribute units",
-					attributeUnitsToMap(profile.AttributeUnits()),
-					4)
-
-				buf.logAttributesWithIndentation(
-					"Link table",
-					linkTableToMap(profile.LinkTable()),
-					4)
-
-				buf.logStringTable(profile.StringTable())
+				buf.logProfileSamples(profile.Sample(), dic)
 				buf.logComment(profile.CommentStrindices())
 			}
 		}

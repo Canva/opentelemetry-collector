@@ -24,19 +24,21 @@ The metric will be become optional soon.
 
 #### Attributes
 
-| Name | Description | Values |
-| ---- | ----------- | ------ |
-| string_attr | Attribute with any string value. | Any Str |
-| state | Integer attribute with overridden name. | Any Int |
-| enum_attr | Attribute with a known set of string values. | Str: ``red``, ``green``, ``blue`` |
-| slice_attr | Attribute with a slice value. | Any Slice |
-| map_attr | Attribute with a map value. | Any Map |
+| Name | Description | Values | Optional |
+| ---- | ----------- | ------ | -------- |
+| string_attr | Attribute with any string value. | Any Str | false |
+| state | Integer attribute with overridden name. | Any Int | false |
+| enum_attr | Attribute with a known set of string values. | Str: ``red``, ``green``, ``blue`` | false |
+| slice_attr | Attribute with a slice value. | Any Slice | false |
+| map_attr | Attribute with a map value. | Any Map | false |
+| optional_int_attr | An optional attribute with an integer value | Any Int | true |
+| optional_string_attr | An optional attribute with any string value | Any Str | true |
 
 ### default.metric.to_be_removed
 
 [DEPRECATED] Non-monotonic delta sum double metric enabled by default.
 
-The metric will be will be removed soon.
+The metric will be removed soon.
 
 | Unit | Metric Type | Value Type | Aggregation Temporality | Monotonic |
 | ---- | ----------- | ---------- | ----------------------- | --------- |
@@ -52,13 +54,13 @@ Monotonic cumulative sum int metric with string input_type enabled by default.
 
 #### Attributes
 
-| Name | Description | Values |
-| ---- | ----------- | ------ |
-| string_attr | Attribute with any string value. | Any Str |
-| state | Integer attribute with overridden name. | Any Int |
-| enum_attr | Attribute with a known set of string values. | Str: ``red``, ``green``, ``blue`` |
-| slice_attr | Attribute with a slice value. | Any Slice |
-| map_attr | Attribute with a map value. | Any Map |
+| Name | Description | Values | Optional |
+| ---- | ----------- | ------ | -------- |
+| string_attr | Attribute with any string value. | Any Str | false |
+| state | Integer attribute with overridden name. | Any Int | false |
+| enum_attr | Attribute with a known set of string values. | Str: ``red``, ``green``, ``blue`` | false |
+| slice_attr | Attribute with a slice value. | Any Slice | false |
+| map_attr | Attribute with a map value. | Any Map | false |
 
 ## Optional Metrics
 
@@ -80,11 +82,12 @@ metrics:
 
 #### Attributes
 
-| Name | Description | Values |
-| ---- | ----------- | ------ |
-| string_attr | Attribute with any string value. | Any Str |
-| boolean_attr | Attribute with a boolean value. | Any Bool |
-| boolean_attr2 | Another attribute with a boolean value. | Any Bool |
+| Name | Description | Values | Optional |
+| ---- | ----------- | ------ | -------- |
+| string_attr | Attribute with any string value. | Any Str | false |
+| boolean_attr | Attribute with a boolean value. | Any Bool | false |
+| boolean_attr2 | Another attribute with a boolean value. | Any Bool | false |
+| optional_string_attr | An optional attribute with any string value | Any Str | true |
 
 ### optional.metric.empty_unit
 
@@ -96,10 +99,77 @@ metrics:
 
 #### Attributes
 
+| Name | Description | Values | Optional |
+| ---- | ----------- | ------ | -------- |
+| string_attr | Attribute with any string value. | Any Str | false |
+| boolean_attr | Attribute with a boolean value. | Any Bool | false |
+
+## Default Events
+
+The following events are emitted by default. Each of them can be disabled by applying the following configuration:
+
+```yaml
+events:
+  <event_name>:
+    enabled: false
+```
+
+### default.event
+
+Example event enabled by default.
+
+#### Attributes
+
+| Name | Description | Values |
+| ---- | ----------- | ------ |
+| string_attr | Attribute with any string value. | Any Str |
+| state | Integer attribute with overridden name. | Any Int |
+| enum_attr | Attribute with a known set of string values. | Str: ``red``, ``green``, ``blue`` |
+| slice_attr | Attribute with a slice value. | Any Slice |
+| map_attr | Attribute with a map value. | Any Map |
+| optional_int_attr | An optional attribute with an integer value | Any Int |
+| optional_string_attr | An optional attribute with any string value | Any Str |
+
+### default.event.to_be_removed
+
+[DEPRECATED] Example to-be-removed event enabled by default.
+
+The event will be removed soon.
+
+#### Attributes
+
+| Name | Description | Values |
+| ---- | ----------- | ------ |
+| string_attr | Attribute with any string value. | Any Str |
+| state | Integer attribute with overridden name. | Any Int |
+| enum_attr | Attribute with a known set of string values. | Str: ``red``, ``green``, ``blue`` |
+| slice_attr | Attribute with a slice value. | Any Slice |
+| map_attr | Attribute with a map value. | Any Map |
+
+## Optional Events
+
+The following events are not emitted by default. Each of them can be enabled by applying the following configuration:
+
+```yaml
+events:
+  <event_name>:
+    enabled: true
+```
+
+### default.event.to_be_renamed
+
+[DEPRECATED] Example event disabled by default.
+
+The event will be renamed soon.
+
+#### Attributes
+
 | Name | Description | Values |
 | ---- | ----------- | ------ |
 | string_attr | Attribute with any string value. | Any Str |
 | boolean_attr | Attribute with a boolean value. | Any Bool |
+| boolean_attr2 | Another attribute with a boolean value. | Any Bool |
+| optional_string_attr | An optional attribute with any string value | Any Str |
 
 ## Resource Attributes
 
@@ -122,32 +192,40 @@ The following telemetry is emitted by this component.
 
 Number of times the batch was sent due to a size trigger [deprecated since v0.110.0]
 
-| Unit | Metric Type | Value Type | Monotonic |
-| ---- | ----------- | ---------- | --------- |
-| {times} | Sum | Int | true |
+| Unit | Metric Type | Value Type | Monotonic | Stability |
+| ---- | ----------- | ---------- | --------- | --------- |
+| {times} | Sum | Int | true | deprecated |
 
 ### otelcol_process_runtime_total_alloc_bytes
 
 Cumulative bytes allocated for heap objects (see 'go doc runtime.MemStats.TotalAlloc')
 
-| Unit | Metric Type | Value Type | Monotonic |
-| ---- | ----------- | ---------- | --------- |
-| By | Sum | Int | true |
+| Unit | Metric Type | Value Type | Monotonic | Stability |
+| ---- | ----------- | ---------- | --------- | --------- |
+| By | Sum | Int | true | stable |
 
-### otelcol_queue_length
+### otelcol_queue_capacity
 
-This metric is optional and therefore not initialized in NewTelemetryBuilder.
-
-For example this metric only exists if feature A is enabled.
+Queue capacity - sync gauge example.
 
 | Unit | Metric Type | Value Type |
 | ---- | ----------- | ---------- |
 | {items} | Gauge | Int |
 
+### otelcol_queue_length
+
+This metric is optional and therefore not initialized in NewTelemetryBuilder. [alpha]
+
+For example this metric only exists if feature A is enabled.
+
+| Unit | Metric Type | Value Type | Stability |
+| ---- | ----------- | ---------- | --------- |
+| {items} | Gauge | Int | alpha |
+
 ### otelcol_request_duration
 
 Duration of request [alpha]
 
-| Unit | Metric Type | Value Type |
-| ---- | ----------- | ---------- |
-| s | Histogram | Double |
+| Unit | Metric Type | Value Type | Stability |
+| ---- | ----------- | ---------- | --------- |
+| s | Histogram | Double | alpha |

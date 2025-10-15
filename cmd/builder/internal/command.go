@@ -5,10 +5,9 @@ package internal // import "go.opentelemetry.io/collector/cmd/builder/internal"
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/knadh/koanf/parsers/yaml"
-	"github.com/knadh/koanf/providers/env"
+	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 	"github.com/spf13/cobra"
@@ -27,6 +26,7 @@ const (
 	skipGetModulesFlag         = "skip-get-modules"
 	skipStrictVersioningFlag   = "skip-strict-versioning"
 	ldflagsFlag                = "ldflags"
+	gcflagsFlag                = "gcflags"
 	distributionOutputPathFlag = "output-path"
 	verboseFlag                = "verbose"
 )
@@ -84,6 +84,7 @@ func initFlags(flags *flag.FlagSet) error {
 	flags.Bool(skipStrictVersioningFlag, true, "Whether builder should skip strictly checking the calculated versions following dependency resolution")
 	flags.Bool(verboseFlag, false, "Whether builder should print verbose output (default false)")
 	flags.String(ldflagsFlag, "", `ldflags to include in the "go build" command`)
+	flags.String(gcflagsFlag, "", `gcflags to include in the "go build" command`)
 	flags.String(distributionOutputPathFlag, "", "Where to write the resulting files")
 	return flags.MarkDeprecated(distributionOutputPathFlag, "use config distribution::output_path")
 }
@@ -114,12 +115,7 @@ func initConfig(flags *flag.FlagSet) (*builder.Config, error) {
 	}
 
 	// handle env variables
-	if err = k.Load(env.Provider("", ".", func(s string) string {
-		// Only values from the `dist.` group can be set,
-		// and the subfields in `dist.` contain `_` in their names.
-		// All other fields are arrays and the koanf env provider doesn't provide a straightforward way to set arrays.
-		return strings.Replace(strings.ToLower(s), "dist_", "dist.", 1)
-	}), nil); err != nil {
+	if err = k.Load(env.Provider(".", env.Opt{}), nil); err != nil {
 		return nil, fmt.Errorf("failed to load environment variables: %w", err)
 	}
 
@@ -145,8 +141,17 @@ func applyFlags(flags *flag.FlagSet, cfg *builder.Config) error {
 	cfg.SkipStrictVersioning, err = flags.GetBool(skipStrictVersioningFlag)
 	errs = multierr.Append(errs, err)
 
-	cfg.LDFlags, err = flags.GetString(ldflagsFlag)
-	errs = multierr.Append(errs, err)
+	if flags.Changed(ldflagsFlag) {
+		cfg.LDSet = true
+		cfg.LDFlags, err = flags.GetString(ldflagsFlag)
+		errs = multierr.Append(errs, err)
+	}
+	if flags.Changed(gcflagsFlag) {
+		cfg.GCSet = true
+		cfg.GCFlags, err = flags.GetString(gcflagsFlag)
+		errs = multierr.Append(errs, err)
+	}
+
 	cfg.Verbose, err = flags.GetBool(verboseFlag)
 	errs = multierr.Append(errs, err)
 
