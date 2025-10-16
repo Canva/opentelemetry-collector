@@ -125,14 +125,14 @@ service:
             interval: 5000
             exporter:
               otlp:
-                protocol: grpc/protobuf
+                protocol: grpc
                 endpoint: https://backend:4317
     traces:
       processors:
         - batch:
             exporter:
               otlp:
-                protocol: grpc/protobuf
+                protocol: grpc
                 endpoint: https://backend2:4317
 ```
 
@@ -153,7 +153,7 @@ service:
         batch:
           exporter:
             otlp:
-              protocol: grpc/protobuf
+              protocol: grpc
               endpoint: ${MY_POD_IP}:4317
 ```
 
@@ -170,9 +170,9 @@ service:
 [kitchen-sink]:
   https://github.com/open-telemetry/opentelemetry-configuration/blob/main/examples/kitchen-sink.yaml
 [Current values]:
-  https://opentelemetry.io/docs/collector/internal-telemetry/#values-observable-with-internal-metrics
+  https://opentelemetry.io/docs/collector/internal-telemetry/#summary-of-values-observable-with-internal-metrics
 [Cumulative values]:
-  https://opentelemetry.io/docs/collector/internal-telemetry/#values-observable-with-internal-metrics
+  https://opentelemetry.io/docs/collector/internal-telemetry/#summary-of-values-observable-with-internal-metrics
 [Trace or log events]:
   https://opentelemetry.io/docs/collector/internal-telemetry/#events-observable-with-internal-logs
 [Host metrics]:

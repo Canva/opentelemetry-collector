@@ -9,15 +9,23 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/confignet"
+	"go.opentelemetry.io/collector/config/configoptional"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/consumer/xconsumer"
+	"go.opentelemetry.io/collector/internal/telemetry"
+	"go.opentelemetry.io/collector/internal/telemetry/componentattribute"
 	"go.opentelemetry.io/collector/internal/testutil"
+	"go.opentelemetry.io/collector/receiver/otlpreceiver/internal/metadata"
 	"go.opentelemetry.io/collector/receiver/receivertest"
 	"go.opentelemetry.io/collector/receiver/xreceiver"
 )
@@ -32,10 +40,17 @@ func TestCreateDefaultConfig(t *testing.T) {
 func TestCreateSameReceiver(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig().(*Config)
-	cfg.GRPC.NetAddr.Endpoint = testutil.GetAvailableLocalAddress(t)
-	cfg.HTTP.Endpoint = testutil.GetAvailableLocalAddress(t)
+	cfg.GRPC.GetOrInsertDefault().NetAddr.Endpoint = testutil.GetAvailableLocalAddress(t)
+	cfg.HTTP.GetOrInsertDefault().ServerConfig.Endpoint = testutil.GetAvailableLocalAddress(t)
 
-	creationSet := receivertest.NewNopSettings()
+	core, observer := observer.New(zapcore.DebugLevel)
+	attrs := attribute.NewSet(
+		attribute.String(componentattribute.SignalKey, "traces"), // should be removed
+		attribute.String(componentattribute.ComponentIDKey, "otlp"),
+	)
+	creationSet := receivertest.NewNopSettings(factory.Type())
+	creationSet.Logger = zap.New(componentattribute.NewConsoleCoreWithAttributes(core, attribute.NewSet()))
+	creationSet.TelemetrySettings = telemetry.WithAttributeSet(creationSet.TelemetrySettings, attrs)
 	tReceiver, err := factory.CreateTraces(context.Background(), creationSet, cfg, consumertest.NewNop())
 	assert.NotNil(t, tReceiver)
 	require.NoError(t, err)
@@ -55,24 +70,35 @@ func TestCreateSameReceiver(t *testing.T) {
 	assert.Same(t, tReceiver, mReceiver)
 	assert.Same(t, tReceiver, lReceiver)
 	assert.Same(t, tReceiver, pReceiver)
+
+	var createLoggerCount int
+	for _, log := range observer.All() {
+		if log.Message == "created signal-agnostic logger" {
+			createLoggerCount++
+			require.Len(t, log.Context, 1)
+			assert.Equal(t, componentattribute.ComponentIDKey, log.Context[0].Key)
+			assert.Equal(t, "otlp", log.Context[0].String)
+		}
+	}
+	assert.Equal(t, 1, createLoggerCount)
 }
 
 func TestCreateTraces(t *testing.T) {
 	factory := NewFactory()
-	defaultGRPCSettings := &configgrpc.ServerConfig{
+	defaultGRPCSettings := configoptional.Some(configgrpc.ServerConfig{
 		NetAddr: confignet.AddrConfig{
 			Endpoint:  testutil.GetAvailableLocalAddress(t),
 			Transport: confignet.TransportTypeTCP,
 		},
-	}
+	})
 	defaultServerConfig := confighttp.NewDefaultServerConfig()
 	defaultServerConfig.Endpoint = testutil.GetAvailableLocalAddress(t)
-	defaultHTTPSettings := &HTTPConfig{
-		ServerConfig:   &defaultServerConfig,
+	defaultHTTPSettings := configoptional.Some(HTTPConfig{
+		ServerConfig:   defaultServerConfig,
 		TracesURLPath:  defaultTracesURLPath,
 		MetricsURLPath: defaultMetricsURLPath,
 		LogsURLPath:    defaultLogsURLPath,
-	}
+	})
 
 	tests := []struct {
 		name         string
@@ -95,12 +121,12 @@ func TestCreateTraces(t *testing.T) {
 			name: "invalid_grpc_port",
 			cfg: &Config{
 				Protocols: Protocols{
-					GRPC: &configgrpc.ServerConfig{
+					GRPC: configoptional.Some(configgrpc.ServerConfig{
 						NetAddr: confignet.AddrConfig{
 							Endpoint:  "localhost:112233",
 							Transport: confignet.TransportTypeTCP,
 						},
-					},
+					}),
 					HTTP: defaultHTTPSettings,
 				},
 			},
@@ -112,12 +138,12 @@ func TestCreateTraces(t *testing.T) {
 			cfg: &Config{
 				Protocols: Protocols{
 					GRPC: defaultGRPCSettings,
-					HTTP: &HTTPConfig{
-						ServerConfig: &confighttp.ServerConfig{
+					HTTP: configoptional.Some(HTTPConfig{
+						ServerConfig: confighttp.ServerConfig{
 							Endpoint: "localhost:112233",
 						},
 						TracesURLPath: defaultTracesURLPath,
-					},
+					}),
 				},
 			},
 			wantStartErr: true,
@@ -131,10 +157,10 @@ func TestCreateTraces(t *testing.T) {
 			sink: consumertest.NewNop(),
 		},
 	}
-	ctx := context.Background()
-	creationSet := receivertest.NewNopSettings()
+	creationSet := receivertest.NewNopSettings(metadata.Type)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
 			tr, err := factory.CreateTraces(ctx, creationSet, tt.cfg, tt.sink)
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -142,10 +168,10 @@ func TestCreateTraces(t *testing.T) {
 			}
 			require.NoError(t, err)
 			if tt.wantStartErr {
-				assert.Error(t, tr.Start(context.Background(), componenttest.NewNopHost()))
+				assert.Error(t, tr.Start(ctx, componenttest.NewNopHost()))
 			} else {
-				assert.NoError(t, tr.Start(context.Background(), componenttest.NewNopHost()))
-				assert.NoError(t, tr.Shutdown(context.Background()))
+				assert.NoError(t, tr.Start(ctx, componenttest.NewNopHost()))
+				assert.NoError(t, tr.Shutdown(ctx))
 			}
 		})
 	}
@@ -153,20 +179,20 @@ func TestCreateTraces(t *testing.T) {
 
 func TestCreateMetric(t *testing.T) {
 	factory := NewFactory()
-	defaultGRPCSettings := &configgrpc.ServerConfig{
+	defaultGRPCSettings := configoptional.Some(configgrpc.ServerConfig{
 		NetAddr: confignet.AddrConfig{
 			Endpoint:  "127.0.0.1:0",
 			Transport: confignet.TransportTypeTCP,
 		},
-	}
+	})
 	defaultServerConfig := confighttp.NewDefaultServerConfig()
 	defaultServerConfig.Endpoint = "127.0.0.1:0"
-	defaultHTTPSettings := &HTTPConfig{
-		ServerConfig:   &defaultServerConfig,
+	defaultHTTPSettings := configoptional.Some(HTTPConfig{
+		ServerConfig:   defaultServerConfig,
 		TracesURLPath:  defaultTracesURLPath,
 		MetricsURLPath: defaultMetricsURLPath,
 		LogsURLPath:    defaultLogsURLPath,
-	}
+	})
 
 	tests := []struct {
 		name         string
@@ -189,12 +215,12 @@ func TestCreateMetric(t *testing.T) {
 			name: "invalid_grpc_address",
 			cfg: &Config{
 				Protocols: Protocols{
-					GRPC: &configgrpc.ServerConfig{
+					GRPC: configoptional.Some(configgrpc.ServerConfig{
 						NetAddr: confignet.AddrConfig{
 							Endpoint:  "327.0.0.1:1122",
 							Transport: confignet.TransportTypeTCP,
 						},
-					},
+					}),
 					HTTP: defaultHTTPSettings,
 				},
 			},
@@ -206,12 +232,12 @@ func TestCreateMetric(t *testing.T) {
 			cfg: &Config{
 				Protocols: Protocols{
 					GRPC: defaultGRPCSettings,
-					HTTP: &HTTPConfig{
-						ServerConfig: &confighttp.ServerConfig{
+					HTTP: configoptional.Some(HTTPConfig{
+						ServerConfig: confighttp.ServerConfig{
 							Endpoint: "327.0.0.1:1122",
 						},
 						MetricsURLPath: defaultMetricsURLPath,
-					},
+					}),
 				},
 			},
 			wantStartErr: true,
@@ -225,10 +251,10 @@ func TestCreateMetric(t *testing.T) {
 			sink: consumertest.NewNop(),
 		},
 	}
-	ctx := context.Background()
-	creationSet := receivertest.NewNopSettings()
+	creationSet := receivertest.NewNopSettings(metadata.Type)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
 			mr, err := factory.CreateMetrics(ctx, creationSet, tt.cfg, tt.sink)
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -236,10 +262,10 @@ func TestCreateMetric(t *testing.T) {
 			}
 			require.NoError(t, err)
 			if tt.wantStartErr {
-				assert.Error(t, mr.Start(context.Background(), componenttest.NewNopHost()))
+				assert.Error(t, mr.Start(ctx, componenttest.NewNopHost()))
 			} else {
-				require.NoError(t, mr.Start(context.Background(), componenttest.NewNopHost()))
-				assert.NoError(t, mr.Shutdown(context.Background()))
+				require.NoError(t, mr.Start(ctx, componenttest.NewNopHost()))
+				assert.NoError(t, mr.Shutdown(ctx))
 			}
 		})
 	}
@@ -247,20 +273,20 @@ func TestCreateMetric(t *testing.T) {
 
 func TestCreateLogs(t *testing.T) {
 	factory := NewFactory()
-	defaultGRPCSettings := &configgrpc.ServerConfig{
+	defaultGRPCSettings := configoptional.Some(configgrpc.ServerConfig{
 		NetAddr: confignet.AddrConfig{
 			Endpoint:  testutil.GetAvailableLocalAddress(t),
 			Transport: confignet.TransportTypeTCP,
 		},
-	}
+	})
 	defaultServerConfig := confighttp.NewDefaultServerConfig()
 	defaultServerConfig.Endpoint = testutil.GetAvailableLocalAddress(t)
-	defaultHTTPSettings := &HTTPConfig{
-		ServerConfig:   &defaultServerConfig,
+	defaultHTTPSettings := configoptional.Some(HTTPConfig{
+		ServerConfig:   defaultServerConfig,
 		TracesURLPath:  defaultTracesURLPath,
 		MetricsURLPath: defaultMetricsURLPath,
 		LogsURLPath:    defaultLogsURLPath,
-	}
+	})
 
 	tests := []struct {
 		name         string
@@ -283,12 +309,12 @@ func TestCreateLogs(t *testing.T) {
 			name: "invalid_grpc_address",
 			cfg: &Config{
 				Protocols: Protocols{
-					GRPC: &configgrpc.ServerConfig{
+					GRPC: configoptional.Some(configgrpc.ServerConfig{
 						NetAddr: confignet.AddrConfig{
 							Endpoint:  "327.0.0.1:1122",
 							Transport: confignet.TransportTypeTCP,
 						},
-					},
+					}),
 					HTTP: defaultHTTPSettings,
 				},
 			},
@@ -300,12 +326,12 @@ func TestCreateLogs(t *testing.T) {
 			cfg: &Config{
 				Protocols: Protocols{
 					GRPC: defaultGRPCSettings,
-					HTTP: &HTTPConfig{
-						ServerConfig: &confighttp.ServerConfig{
+					HTTP: configoptional.Some(HTTPConfig{
+						ServerConfig: confighttp.ServerConfig{
 							Endpoint: "327.0.0.1:1122",
 						},
 						LogsURLPath: defaultLogsURLPath,
-					},
+					}),
 				},
 			},
 			wantStartErr: true,
@@ -319,10 +345,10 @@ func TestCreateLogs(t *testing.T) {
 			sink: consumertest.NewNop(),
 		},
 	}
-	ctx := context.Background()
-	creationSet := receivertest.NewNopSettings()
+	creationSet := receivertest.NewNopSettings(metadata.Type)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
 			mr, err := factory.CreateLogs(ctx, creationSet, tt.cfg, tt.sink)
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -330,10 +356,10 @@ func TestCreateLogs(t *testing.T) {
 			}
 			require.NoError(t, err)
 			if tt.wantStartErr {
-				assert.Error(t, mr.Start(context.Background(), componenttest.NewNopHost()))
+				assert.Error(t, mr.Start(ctx, componenttest.NewNopHost()))
 			} else {
-				require.NoError(t, mr.Start(context.Background(), componenttest.NewNopHost()))
-				assert.NoError(t, mr.Shutdown(context.Background()))
+				require.NoError(t, mr.Start(ctx, componenttest.NewNopHost()))
+				assert.NoError(t, mr.Shutdown(ctx))
 			}
 		})
 	}
@@ -341,20 +367,20 @@ func TestCreateLogs(t *testing.T) {
 
 func TestCreateProfiles(t *testing.T) {
 	factory := NewFactory()
-	defaultGRPCSettings := &configgrpc.ServerConfig{
+	defaultGRPCSettings := configoptional.Some(configgrpc.ServerConfig{
 		NetAddr: confignet.AddrConfig{
 			Endpoint:  testutil.GetAvailableLocalAddress(t),
 			Transport: confignet.TransportTypeTCP,
 		},
-	}
+	})
 	defaultServerConfig := confighttp.NewDefaultServerConfig()
 	defaultServerConfig.Endpoint = testutil.GetAvailableLocalAddress(t)
-	defaultHTTPSettings := &HTTPConfig{
-		ServerConfig:   &defaultServerConfig,
+	defaultHTTPSettings := configoptional.Some(HTTPConfig{
+		ServerConfig:   defaultServerConfig,
 		TracesURLPath:  defaultTracesURLPath,
 		MetricsURLPath: defaultMetricsURLPath,
 		LogsURLPath:    defaultLogsURLPath,
-	}
+	})
 
 	tests := []struct {
 		name         string
@@ -377,12 +403,12 @@ func TestCreateProfiles(t *testing.T) {
 			name: "invalid_grpc_port",
 			cfg: &Config{
 				Protocols: Protocols{
-					GRPC: &configgrpc.ServerConfig{
+					GRPC: configoptional.Some(configgrpc.ServerConfig{
 						NetAddr: confignet.AddrConfig{
 							Endpoint:  "localhost:112233",
 							Transport: confignet.TransportTypeTCP,
 						},
-					},
+					}),
 					HTTP: defaultHTTPSettings,
 				},
 			},
@@ -394,11 +420,11 @@ func TestCreateProfiles(t *testing.T) {
 			cfg: &Config{
 				Protocols: Protocols{
 					GRPC: defaultGRPCSettings,
-					HTTP: &HTTPConfig{
-						ServerConfig: &confighttp.ServerConfig{
+					HTTP: configoptional.Some(HTTPConfig{
+						ServerConfig: confighttp.ServerConfig{
 							Endpoint: "localhost:112233",
 						},
-					},
+					}),
 				},
 			},
 			wantStartErr: true,
@@ -412,10 +438,10 @@ func TestCreateProfiles(t *testing.T) {
 			sink: consumertest.NewNop(),
 		},
 	}
-	ctx := context.Background()
-	creationSet := receivertest.NewNopSettings()
+	creationSet := receivertest.NewNopSettings(metadata.Type)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
 			tr, err := factory.(xreceiver.Factory).CreateProfiles(ctx, creationSet, tt.cfg, tt.sink)
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -423,10 +449,10 @@ func TestCreateProfiles(t *testing.T) {
 			}
 			require.NoError(t, err)
 			if tt.wantStartErr {
-				assert.Error(t, tr.Start(context.Background(), componenttest.NewNopHost()))
+				assert.Error(t, tr.Start(ctx, componenttest.NewNopHost()))
 			} else {
-				assert.NoError(t, tr.Start(context.Background(), componenttest.NewNopHost()))
-				assert.NoError(t, tr.Shutdown(context.Background()))
+				assert.NoError(t, tr.Start(ctx, componenttest.NewNopHost()))
+				assert.NoError(t, tr.Shutdown(ctx))
 			}
 		})
 	}

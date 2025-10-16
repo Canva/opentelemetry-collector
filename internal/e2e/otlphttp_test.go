@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -17,8 +16,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gootlpcollectortrace "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	gootlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
+	gootlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
+	gootlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
@@ -43,7 +49,7 @@ func TestInvalidConfig(t *testing.T) {
 		},
 	}
 	f := otlphttpexporter.NewFactory()
-	set := exportertest.NewNopSettings()
+	set := exportertest.NewNopSettings(f.Type())
 	_, err := f.CreateTraces(context.Background(), set, config)
 	require.Error(t, err)
 	_, err = f.CreateMetrics(context.Background(), set, config)
@@ -117,7 +123,7 @@ func TestTraceRoundTrip(t *testing.T) {
 			}, 1*time.Second, 10*time.Millisecond)
 			allTraces := sink.AllTraces()
 			require.Len(t, allTraces, 1)
-			assert.EqualValues(t, td, allTraces[0])
+			assert.Equal(t, td, allTraces[0])
 		})
 	}
 }
@@ -170,7 +176,7 @@ func TestMetricsRoundTrip(t *testing.T) {
 			}, 1*time.Second, 10*time.Millisecond)
 			allMetrics := sink.AllMetrics()
 			require.Len(t, allMetrics, 1)
-			assert.EqualValues(t, md, allMetrics[0])
+			assert.Equal(t, md, allMetrics[0])
 		})
 	}
 }
@@ -223,12 +229,17 @@ func TestLogsRoundTrip(t *testing.T) {
 			}, 1*time.Second, 10*time.Millisecond)
 			allLogs := sink.AllLogs()
 			require.Len(t, allLogs, 1)
-			assert.EqualValues(t, md, allLogs[0])
+			assert.Equal(t, md, allLogs[0])
 		})
 	}
 }
 
 func TestIssue_4221(t *testing.T) {
+	traceIDBytesSlice, err := hex.DecodeString("4303853f086f4f8c86cf198b6551df84")
+	require.NoError(t, err)
+	spanIDBytesSlice, err := hex.DecodeString("e5513c32795c41b9")
+	require.NoError(t, err)
+
 	svr := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		defer func() { assert.NoError(t, r.Body.Close()) }()
 		compressedData, err := io.ReadAll(r.Body)
@@ -237,13 +248,75 @@ func TestIssue_4221(t *testing.T) {
 		assert.NoError(t, err)
 		data, err := io.ReadAll(gzipReader)
 		assert.NoError(t, err)
-		base64Data := base64.StdEncoding.EncodeToString(data)
 		// Verify same base64 encoded string is received.
-		assert.Equal(t, "CscBCkkKIAoMc2VydmljZS5uYW1lEhAKDnVvcC5zdGFnZS1ldS0xCiUKGW91dHN5c3RlbXMubW9kdWxlLnZlcnNpb24SCAoGOTAzMzg2EnoKEQoMdW9wX2NhbmFyaWVzEgExEmUKEEMDhT8Ib0+Mhs8Zi2VR34QSCOVRPDJ5XEG5IgA5QE41aASRrxZBQE41aASRrxZKEAoKc3Bhbl9pbmRleBICGANKHwoNY29kZS5mdW5jdGlvbhIOCgxteUZ1bmN0aW9uMzZ6AA==", base64Data)
-		unbase64Data, err := base64.StdEncoding.DecodeString(base64Data)
+		req := &gootlpcollectortrace.ExportTraceServiceRequest{}
+		assert.NoError(t, proto.Unmarshal(data, req))
+
+		assert.Empty(t, cmp.Diff(&gootlpcollectortrace.ExportTraceServiceRequest{
+			ResourceSpans: []*gootlptrace.ResourceSpans{
+				{
+					Resource: &gootlpresource.Resource{
+						Attributes: []*gootlpcommon.KeyValue{
+							{
+								Key: "service.name",
+								Value: &gootlpcommon.AnyValue{
+									Value: &gootlpcommon.AnyValue_StringValue{
+										StringValue: "uop.stage-eu-1",
+									},
+								},
+							},
+							{
+								Key: "outsystems.module.version",
+								Value: &gootlpcommon.AnyValue{
+									Value: &gootlpcommon.AnyValue_StringValue{
+										StringValue: "903386",
+									},
+								},
+							},
+						},
+					},
+					ScopeSpans: []*gootlptrace.ScopeSpans{
+						{
+							Scope: &gootlpcommon.InstrumentationScope{
+								Name:    "uop_canaries",
+								Version: "1",
+							},
+							Spans: []*gootlptrace.Span{
+								{
+									TraceId:           traceIDBytesSlice,
+									SpanId:            spanIDBytesSlice,
+									StartTimeUnixNano: 1634684637873000000,
+									EndTimeUnixNano:   1634684637873000000,
+									Attributes: []*gootlpcommon.KeyValue{
+										{
+											Key: "span_index",
+											Value: &gootlpcommon.AnyValue{
+												Value: &gootlpcommon.AnyValue_IntValue{
+													IntValue: 3,
+												},
+											},
+										},
+										{
+											Key: "code.function",
+											Value: &gootlpcommon.AnyValue{
+												Value: &gootlpcommon.AnyValue_StringValue{
+													StringValue: "myFunction36",
+												},
+											},
+										},
+									},
+									Status: &gootlptrace.Status{},
+								},
+							},
+						},
+					},
+				},
+			},
+		}, req, protocmp.Transform()))
+
 		assert.NoError(t, err)
 		tr := ptraceotlp.NewExportRequest()
-		assert.NoError(t, tr.UnmarshalProto(unbase64Data))
+		assert.NoError(t, tr.UnmarshalProto(data))
 		span := tr.Traces().ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 		traceID := span.TraceID()
 		assert.Equal(t, "4303853f086f4f8c86cf198b6551df84", hex.EncodeToString(traceID[:]))
@@ -264,16 +337,12 @@ func TestIssue_4221(t *testing.T) {
 	span := ils.Spans().AppendEmpty()
 
 	var traceIDBytes [16]byte
-	traceIDBytesSlice, err := hex.DecodeString("4303853f086f4f8c86cf198b6551df84")
-	require.NoError(t, err)
 	copy(traceIDBytes[:], traceIDBytesSlice)
 	span.SetTraceID(traceIDBytes)
 	traceID := span.TraceID()
 	assert.Equal(t, "4303853f086f4f8c86cf198b6551df84", hex.EncodeToString(traceID[:]))
 
 	var spanIDBytes [8]byte
-	spanIDBytesSlice, err := hex.DecodeString("e5513c32795c41b9")
-	require.NoError(t, err)
 	copy(spanIDBytes[:], spanIDBytesSlice)
 	span.SetSpanID(spanIDBytes)
 	spanID := span.SpanID()
@@ -287,31 +356,31 @@ func TestIssue_4221(t *testing.T) {
 	assert.NoError(t, exp.ConsumeTraces(context.Background(), md))
 }
 
-func startTraces(t *testing.T, baseURL string, overrideURL string) exporter.Traces {
+func startTraces(t *testing.T, baseURL, overrideURL string) exporter.Traces {
 	factory := otlphttpexporter.NewFactory()
 	cfg := createConfig(baseURL, factory.CreateDefaultConfig())
 	cfg.TracesEndpoint = overrideURL
-	exp, err := factory.CreateTraces(context.Background(), exportertest.NewNopSettings(), cfg)
+	exp, err := factory.CreateTraces(context.Background(), exportertest.NewNopSettings(factory.Type()), cfg)
 	require.NoError(t, err)
 	startAndCleanup(t, exp)
 	return exp
 }
 
-func startMetrics(t *testing.T, baseURL string, overrideURL string) exporter.Metrics {
+func startMetrics(t *testing.T, baseURL, overrideURL string) exporter.Metrics {
 	factory := otlphttpexporter.NewFactory()
 	cfg := createConfig(baseURL, factory.CreateDefaultConfig())
 	cfg.MetricsEndpoint = overrideURL
-	exp, err := factory.CreateMetrics(context.Background(), exportertest.NewNopSettings(), cfg)
+	exp, err := factory.CreateMetrics(context.Background(), exportertest.NewNopSettings(factory.Type()), cfg)
 	require.NoError(t, err)
 	startAndCleanup(t, exp)
 	return exp
 }
 
-func startLogs(t *testing.T, baseURL string, overrideURL string) exporter.Logs {
+func startLogs(t *testing.T, baseURL, overrideURL string) exporter.Logs {
 	factory := otlphttpexporter.NewFactory()
 	cfg := createConfig(baseURL, factory.CreateDefaultConfig())
 	cfg.LogsEndpoint = overrideURL
-	exp, err := factory.CreateLogs(context.Background(), exportertest.NewNopSettings(), cfg)
+	exp, err := factory.CreateLogs(context.Background(), exportertest.NewNopSettings(factory.Type()), cfg)
 	require.NoError(t, err)
 	startAndCleanup(t, exp)
 	return exp
@@ -319,7 +388,7 @@ func startLogs(t *testing.T, baseURL string, overrideURL string) exporter.Logs {
 
 func createConfig(baseURL string, defaultCfg component.Config) *otlphttpexporter.Config {
 	cfg := defaultCfg.(*otlphttpexporter.Config)
-	cfg.Endpoint = baseURL
+	cfg.ClientConfig.Endpoint = baseURL
 	cfg.QueueConfig.Enabled = false
 	cfg.RetryConfig.Enabled = false
 	return cfg
@@ -328,7 +397,7 @@ func createConfig(baseURL string, defaultCfg component.Config) *otlphttpexporter
 func startTracesReceiver(t *testing.T, addr string, next consumer.Traces) {
 	factory := otlpreceiver.NewFactory()
 	cfg := createReceiverConfig(addr, factory.CreateDefaultConfig())
-	recv, err := factory.CreateTraces(context.Background(), receivertest.NewNopSettings(), cfg, next)
+	recv, err := factory.CreateTraces(context.Background(), receivertest.NewNopSettings(factory.Type()), cfg, next)
 	require.NoError(t, err)
 	startAndCleanup(t, recv)
 }
@@ -336,7 +405,7 @@ func startTracesReceiver(t *testing.T, addr string, next consumer.Traces) {
 func startMetricsReceiver(t *testing.T, addr string, next consumer.Metrics) {
 	factory := otlpreceiver.NewFactory()
 	cfg := createReceiverConfig(addr, factory.CreateDefaultConfig())
-	recv, err := factory.CreateMetrics(context.Background(), receivertest.NewNopSettings(), cfg, next)
+	recv, err := factory.CreateMetrics(context.Background(), receivertest.NewNopSettings(factory.Type()), cfg, next)
 	require.NoError(t, err)
 	startAndCleanup(t, recv)
 }
@@ -344,15 +413,14 @@ func startMetricsReceiver(t *testing.T, addr string, next consumer.Metrics) {
 func startLogsReceiver(t *testing.T, addr string, next consumer.Logs) {
 	factory := otlpreceiver.NewFactory()
 	cfg := createReceiverConfig(addr, factory.CreateDefaultConfig())
-	recv, err := factory.CreateLogs(context.Background(), receivertest.NewNopSettings(), cfg, next)
+	recv, err := factory.CreateLogs(context.Background(), receivertest.NewNopSettings(factory.Type()), cfg, next)
 	require.NoError(t, err)
 	startAndCleanup(t, recv)
 }
 
 func createReceiverConfig(addr string, defaultCfg component.Config) *otlpreceiver.Config {
 	cfg := defaultCfg.(*otlpreceiver.Config)
-	cfg.HTTP.Endpoint = addr
-	cfg.GRPC = nil
+	cfg.HTTP.GetOrInsertDefault().ServerConfig.Endpoint = addr
 	return cfg
 }
 

@@ -23,6 +23,7 @@ func (textLogsMarshaler) MarshalLogs(ld plog.Logs) ([]byte, error) {
 		rl := rls.At(i)
 		buf.logEntry("Resource SchemaURL: %s", rl.SchemaUrl())
 		buf.logAttributes("Resource attributes", rl.Resource().Attributes())
+		buf.logEntityRefs(rl.Resource())
 		ills := rl.ScopeLogs()
 		for j := 0; j < ills.Len(); j++ {
 			buf.logEntry("ScopeLogs #%d", j)
@@ -38,6 +39,9 @@ func (textLogsMarshaler) MarshalLogs(ld plog.Logs) ([]byte, error) {
 				buf.logEntry("Timestamp: %s", lr.Timestamp())
 				buf.logEntry("SeverityText: %s", lr.SeverityText())
 				buf.logEntry("SeverityNumber: %s(%d)", lr.SeverityNumber(), lr.SeverityNumber())
+				if lr.EventName() != "" {
+					buf.logEntry("EventName: %s", lr.EventName())
+				}
 				buf.logEntry("Body: %s", valueToString(lr.Body()))
 				buf.logAttributes("Attributes", lr.Attributes())
 				buf.logEntry("Trace ID: %s", lr.TraceID())

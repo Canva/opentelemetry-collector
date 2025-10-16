@@ -135,7 +135,6 @@ receivers:
    - otlp
 processors:
    - memory_limiter
-   - batch
 exporters:
    - otlp
    - otlphttp
@@ -148,4 +147,10 @@ extensions:
 
 ```bash
    ./otelcorecol validate --config=file:examples/local/otel-config.yaml
+```
+
+## How to examine the final configuration after merging and resolving from various sources?
+
+```bash
+   ./otelcorecol print-initial-config --config=file:file.yaml --config=http:http://remote:8080/config --config=file:file2.yaml
 ```

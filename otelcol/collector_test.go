@@ -7,6 +7,8 @@ package otelcol
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,7 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
-	"gopkg.in/yaml.v3"
+	yaml "go.yaml.in/yaml/v3"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componentstatus"
@@ -76,42 +78,91 @@ func TestCollectorCancelContext(t *testing.T) {
 	assert.Equal(t, StateClosed, col.GetState())
 }
 
-type mockCfgProvider struct {
-	ConfigProvider
-	watcher chan error
-}
-
-func (p mockCfgProvider) Watch() <-chan error {
-	return p.watcher
-}
-
 func TestCollectorStateAfterConfigChange(t *testing.T) {
-	watcher := make(chan error, 1)
+	metricsPushRequests := make(chan chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		unblock := make(chan struct{})
+		select {
+		case <-r.Context().Done():
+		case metricsPushRequests <- unblock:
+			select {
+			case <-unblock:
+			case <-r.Context().Done():
+			}
+		}
+	}))
+	defer srv.Close()
+
+	var watcher confmap.WatcherFunc
+	fileProvider := newFakeProvider("file", func(_ context.Context, uri string, w confmap.WatcherFunc) (*confmap.Retrieved, error) {
+		watcher = w
+		conf := newConfFromFile(t, uri[5:])
+		conf["service"].(map[string]any)["telemetry"] = map[string]any{
+			"metrics": map[string]any{
+				"level": "basic",
+				"readers": []any{
+					map[string]any{
+						// Use a periodic metric reader with a long period,
+						// so we should only see an export on shutdown.
+						"periodic": map[string]any{
+							"interval": 30000, // 30s
+							"exporter": map[string]any{
+								"otlp": map[string]any{
+									"endpoint": srv.URL,
+									"insecure": true,
+									"protocol": "http/protobuf",
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		return confmap.NewRetrieved(conf)
+	})
+	set := ConfigProviderSettings{
+		ResolverSettings: confmap.ResolverSettings{
+			URIs: []string{filepath.Join("testdata", "otelcol-nop.yaml")},
+			ProviderFactories: []confmap.ProviderFactory{
+				fileProvider,
+			},
+		},
+	}
 	col, err := NewCollector(CollectorSettings{
-		BuildInfo: component.NewDefaultBuildInfo(),
-		Factories: nopFactories,
-		// this will be overwritten, but we need something to get past validation
-		ConfigProviderSettings: newDefaultConfigProviderSettings(t, []string{filepath.Join("testdata", "otelcol-nop.yaml")}),
+		BuildInfo:              component.NewDefaultBuildInfo(),
+		Factories:              nopFactories,
+		ConfigProviderSettings: set,
 	})
 	require.NoError(t, err)
-	provider, err := NewConfigProvider(newDefaultConfigProviderSettings(t, []string{filepath.Join("testdata", "otelcol-nop.yaml")}))
-	require.NoError(t, err)
-	col.configProvider = &mockCfgProvider{ConfigProvider: provider, watcher: watcher}
 
 	wg := startCollector(context.Background(), t, col)
-
 	assert.Eventually(t, func() bool {
 		return StateRunning == col.GetState()
-	}, 2*time.Second, 200*time.Millisecond)
+	}, 10*time.Second, 10*time.Millisecond)
 
-	watcher <- nil
-
+	// On config change, the collector will internally close
+	// and recreate the service. The metrics reader will try to
+	// push to the OTLP endpoint. We block the request to check
+	// the state of the collector during the config change event.
+	watcher(&confmap.ChangeEvent{})
+	unblock := <-metricsPushRequests
+	assert.Equal(t, StateClosing, col.GetState())
+	close(unblock)
 	assert.Eventually(t, func() bool {
 		return StateRunning == col.GetState()
-	}, 2*time.Second, 200*time.Millisecond)
+	}, 10*time.Second, 10*time.Millisecond)
 
+	// Do it again, but this time call Shutdown during the
+	// config change to make sure the internal service shutdown
+	// does not influence collector shutdown.
+	watcher(&confmap.ChangeEvent{})
+	unblock = <-metricsPushRequests
+	assert.Equal(t, StateClosing, col.GetState())
 	col.Shutdown()
+	close(unblock)
 
+	// After the config reload, the final shutdown should occur.
+	close(<-metricsPushRequests)
 	wg.Wait()
 	assert.Equal(t, StateClosed, col.GetState())
 }
@@ -145,7 +196,7 @@ func NewStatusWatcherExtensionFactory(
 		func() component.Config {
 			return &struct{}{}
 		},
-		func(context.Context, extension.Settings, component.Config) (component.Component, error) {
+		func(context.Context, extension.Settings, component.Config) (extension.Extension, error) {
 			return &statusWatcherExtension{onStatusChanged: onStatusChanged}, nil
 		},
 		component.StabilityLevelStable)
@@ -227,7 +278,7 @@ func TestComponentStatusWatcher(t *testing.T) {
 
 		for k, v := range changedComponents {
 			// All processors must report a status change with the same ID
-			assert.EqualValues(t, component.NewID(unhealthyProcessorFactory.Type()), k.ComponentID())
+			assert.Equal(t, component.NewID(unhealthyProcessorFactory.Type()), k.ComponentID())
 			// And all must have a valid startup sequence
 			assert.Equal(t, startupStatuses(v), v)
 		}
@@ -312,7 +363,7 @@ func TestCollectorStartInvalidConfig(t *testing.T) {
 		ConfigProviderSettings: newDefaultConfigProviderSettings(t, []string{filepath.Join("testdata", "otelcol-invalid.yaml")}),
 	})
 	require.NoError(t, err)
-	assert.Error(t, col.Run(context.Background()))
+	assert.EqualError(t, col.Run(context.Background()), "invalid configuration: service::pipelines::traces: references processor \"invalid\" which is not configured")
 }
 
 func TestNewCollectorInvalidConfigProviderSettings(t *testing.T) {
@@ -391,6 +442,7 @@ func TestCollectorRun(t *testing.T) {
 	}{
 		{file: "otelcol-noreaders.yaml"},
 		{file: "otelcol-emptyreaders.yaml"},
+		{file: "otelcol-multipleheaders.yaml"},
 	}
 
 	for _, tt := range tests {
@@ -460,6 +512,30 @@ func TestCollectorDryRun(t *testing.T) {
 				ConfigProviderSettings: newDefaultConfigProviderSettings(t, []string{filepath.Join("testdata", "otelcol-invalid.yaml")}),
 			},
 			expectedErr: `service::pipelines::traces: references processor "invalid" which is not configured`,
+		},
+		"invalid_connector_use_unused_exp": {
+			settings: CollectorSettings{
+				BuildInfo:              component.NewDefaultBuildInfo(),
+				Factories:              nopFactories,
+				ConfigProviderSettings: newDefaultConfigProviderSettings(t, []string{filepath.Join("testdata", "otelcol-invalid-connector-unused-exp.yaml")}),
+			},
+			expectedErr: `failed to build pipelines: connector "nop/connector1" used as receiver in [logs/in2] pipeline but not used in any supported exporter pipeline`,
+		},
+		"invalid_connector_use_unused_rec": {
+			settings: CollectorSettings{
+				BuildInfo:              component.NewDefaultBuildInfo(),
+				Factories:              nopFactories,
+				ConfigProviderSettings: newDefaultConfigProviderSettings(t, []string{filepath.Join("testdata", "otelcol-invalid-connector-unused-rec.yaml")}),
+			},
+			expectedErr: `failed to build pipelines: connector "nop/connector1" used as exporter in [logs/in2] pipeline but not used in any supported receiver pipeline`,
+		},
+		"cyclic_connector": {
+			settings: CollectorSettings{
+				BuildInfo:              component.NewDefaultBuildInfo(),
+				Factories:              nopFactories,
+				ConfigProviderSettings: newDefaultConfigProviderSettings(t, []string{filepath.Join("testdata", "otelcol-cyclic-connector.yaml")}),
+			},
+			expectedErr: `failed to build pipelines: cycle detected: connector "nop/forward" (traces to traces) -> connector "nop/forward" (traces to traces)`,
 		},
 	}
 
@@ -569,9 +645,9 @@ func newEnvProvider() confmap.ProviderFactory {
 	})
 }
 
-func newDefaultConfigProviderSettings(t testing.TB, uris []string) ConfigProviderSettings {
+func newDefaultConfigProviderSettings(tb testing.TB, uris []string) ConfigProviderSettings {
 	fileProvider := newFakeProvider("file", func(_ context.Context, uri string, _ confmap.WatcherFunc) (*confmap.Retrieved, error) {
-		return confmap.NewRetrieved(newConfFromFile(t, uri[5:]))
+		return confmap.NewRetrieved(newConfFromFile(tb, uri[5:]))
 	})
 	return ConfigProviderSettings{
 		ResolverSettings: confmap.ResolverSettings{
@@ -585,12 +661,40 @@ func newDefaultConfigProviderSettings(t testing.TB, uris []string) ConfigProvide
 }
 
 // newConfFromFile creates a new Conf by reading the given file.
-func newConfFromFile(t testing.TB, fileName string) map[string]any {
+func newConfFromFile(tb testing.TB, fileName string) map[string]any {
 	content, err := os.ReadFile(filepath.Clean(fileName))
-	require.NoErrorf(t, err, "unable to read the file %v", fileName)
+	require.NoErrorf(tb, err, "unable to read the file %v", fileName)
 
 	var data map[string]any
-	require.NoError(t, yaml.Unmarshal(content, &data), "unable to parse yaml")
+	require.NoError(tb, yaml.Unmarshal(content, &data), "unable to parse yaml")
 
 	return confmap.NewFromStringMap(data).ToStringMap()
+}
+
+func TestProviderAndConverterModules(t *testing.T) {
+	set := CollectorSettings{
+		BuildInfo:              component.NewDefaultBuildInfo(),
+		Factories:              nopFactories,
+		ConfigProviderSettings: newDefaultConfigProviderSettings(t, []string{filepath.Join("testdata", "otelcol-nop.yaml")}),
+		ProviderModules: map[string]string{
+			"nop": "go.opentelemetry.io/collector/confmap/provider/testprovider v1.2.3",
+		},
+		ConverterModules: []string{
+			"go.opentelemetry.io/collector/converter/testconverter v1.2.3",
+		},
+	}
+	col, err := NewCollector(set)
+	require.NoError(t, err)
+	wg := startCollector(context.Background(), t, col)
+	require.NoError(t, err)
+	providerModules := map[string]string{
+		"nop": "go.opentelemetry.io/collector/confmap/provider/testprovider v1.2.3",
+	}
+	converterModules := []string{
+		"go.opentelemetry.io/collector/converter/testconverter v1.2.3",
+	}
+	assert.Equal(t, providerModules, col.set.ProviderModules)
+	assert.Equal(t, converterModules, col.set.ConverterModules)
+	col.Shutdown()
+	wg.Wait()
 }

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"sync/atomic"
 	"syscall"
 
@@ -21,7 +22,7 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/confmap"
-	"go.opentelemetry.io/collector/extension"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
 	"go.opentelemetry.io/collector/otelcol/internal/grpclog"
 	"go.opentelemetry.io/collector/service"
 )
@@ -69,6 +70,12 @@ type CollectorSettings struct {
 	// confmap.Providers watch for configuration changes.
 	ConfigProviderSettings ConfigProviderSettings
 
+	// ProviderModules maps provider schemes to their respective go modules.
+	ProviderModules map[string]string
+
+	// ConverterModules maps converter names to their respective go modules.
+	ConverterModules []string
+
 	// LoggingOptions provides a way to change behavior of zap logging.
 	LoggingOptions []zap.Option
 
@@ -91,7 +98,7 @@ type CollectorSettings struct {
 type Collector struct {
 	set CollectorSettings
 
-	configProvider ConfigProvider
+	configProvider *ConfigProvider
 
 	serviceConfig *service.Config
 	service       *service.Service
@@ -99,6 +106,8 @@ type Collector struct {
 
 	// shutdownChan is used to terminate the collector.
 	shutdownChan chan struct{}
+	shutdownOnce sync.Once
+
 	// signalsChannel is used to receive termination signals from the OS.
 	signalsChannel chan os.Signal
 	// asyncErrorChannel is used to signal a fatal error from any component.
@@ -144,14 +153,17 @@ func (col *Collector) GetState() State {
 
 // Shutdown shuts down the collector server.
 func (col *Collector) Shutdown() {
-	// Only shutdown if we're in a Running or Starting State else noop
-	state := col.GetState()
-	if state == StateRunning || state == StateStarting {
-		defer func() {
-			recover() // nolint:errcheck
-		}()
+	col.shutdownOnce.Do(func() {
 		close(col.shutdownChan)
+	})
+}
+
+func buildModuleInfo(m map[component.Type]string) map[component.Type]service.ModuleInfo {
+	moduleInfo := make(map[component.Type]service.ModuleInfo)
+	for k, v := range m {
+		moduleInfo[k] = service.ModuleInfo{BuilderRef: v}
 	}
+	return moduleInfo
 }
 
 // setupConfigurationComponents loads the config, creates the graph, and starts the components. If all the steps succeeds it
@@ -168,7 +180,7 @@ func (col *Collector) setupConfigurationComponents(ctx context.Context) error {
 		return fmt.Errorf("failed to get config: %w", err)
 	}
 
-	if err = cfg.Validate(); err != nil {
+	if err = xconfmap.Validate(cfg); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
@@ -195,12 +207,12 @@ func (col *Collector) setupConfigurationComponents(ctx context.Context) error {
 		ExtensionsConfigs:   cfg.Extensions,
 		ExtensionsFactories: factories.Extensions,
 
-		ModuleInfo: extension.ModuleInfo{
-			Receiver:  factories.ReceiverModules,
-			Processor: factories.ProcessorModules,
-			Exporter:  factories.ExporterModules,
-			Extension: factories.ExtensionModules,
-			Connector: factories.ConnectorModules,
+		ModuleInfos: service.ModuleInfos{
+			Receiver:  buildModuleInfo(factories.ReceiverModules),
+			Processor: buildModuleInfo(factories.ProcessorModules),
+			Exporter:  buildModuleInfo(factories.ExporterModules),
+			Extension: buildModuleInfo(factories.ExtensionModules),
+			Connector: buildModuleInfo(factories.ConnectorModules),
 		},
 		AsyncErrorChannel: col.asyncErrorChannel,
 		LoggingOptions:    col.set.LoggingOptions,
@@ -222,7 +234,7 @@ func (col *Collector) setupConfigurationComponents(ctx context.Context) error {
 	}
 
 	if !col.set.SkipSettingGRPCLogger {
-		grpclog.SetLogger(col.service.Logger(), cfg.Service.Telemetry.Logs.Level)
+		grpclog.SetLogger(col.service.Logger())
 	}
 
 	if err = col.service.Start(ctx); err != nil {
@@ -258,7 +270,23 @@ func (col *Collector) DryRun(ctx context.Context) error {
 		return fmt.Errorf("failed to get config: %w", err)
 	}
 
-	return cfg.Validate()
+	if err := xconfmap.Validate(cfg); err != nil {
+		return err
+	}
+
+	return service.Validate(ctx, service.Settings{
+		BuildInfo:           col.set.BuildInfo,
+		ReceiversConfigs:    cfg.Receivers,
+		ReceiversFactories:  factories.Receivers,
+		ProcessorsConfigs:   cfg.Processors,
+		ProcessorsFactories: factories.Processors,
+		ExportersConfigs:    cfg.Exporters,
+		ExportersFactories:  factories.Exporters,
+		ConnectorsConfigs:   cfg.Connectors,
+		ConnectorsFactories: factories.Connectors,
+	}, service.Config{
+		Pipelines: cfg.Service.Pipelines,
+	})
 }
 
 func newFallbackLogger(options []zap.Option) (*zap.Logger, error) {
@@ -318,7 +346,7 @@ LOOP:
 				col.service.Logger().Error("Config watch failed", zap.Error(err))
 				break LOOP
 			}
-			if err = col.reloadConfiguration(ctx); err != nil {
+			if err := col.reloadConfiguration(ctx); err != nil {
 				return err
 			}
 		case err := <-col.asyncErrorChannel:
@@ -338,7 +366,7 @@ LOOP:
 		case <-ctx.Done():
 			col.service.Logger().Info("Context done, terminating process", zap.Error(ctx.Err()))
 			// Call shutdown with background context as the passed in context has been canceled
-			return col.shutdown(context.Background())
+			return col.shutdown(context.Background()) //nolint:contextcheck
 		}
 	}
 	return col.shutdown(ctx)

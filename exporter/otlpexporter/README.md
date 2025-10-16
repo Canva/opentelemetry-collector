@@ -4,13 +4,11 @@
 | Status        |           |
 | ------------- |-----------|
 | Stability     | [development]: profiles   |
-|               | [beta]: logs   |
-|               | [stable]: traces, metrics   |
+|               | [stable]: traces, metrics, logs   |
 | Distributions | [core], [contrib], [k8s], [otlp] |
 | Issues        | [![Open issues](https://img.shields.io/github/issues-search/open-telemetry/opentelemetry-collector?query=is%3Aissue%20is%3Aopen%20label%3Aexporter%2Fotlp%20&label=open&color=orange&logo=opentelemetry)](https://github.com/open-telemetry/opentelemetry-collector/issues?q=is%3Aopen+is%3Aissue+label%3Aexporter%2Fotlp) [![Closed issues](https://img.shields.io/github/issues-search/open-telemetry/opentelemetry-collector?query=is%3Aissue%20is%3Aclosed%20label%3Aexporter%2Fotlp%20&label=closed&color=blue&logo=opentelemetry)](https://github.com/open-telemetry/opentelemetry-collector/issues?q=is%3Aclosed+is%3Aissue+label%3Aexporter%2Fotlp) |
 
 [development]: https://github.com/open-telemetry/opentelemetry-collector/blob/main/docs/component-stability.md#development
-[beta]: https://github.com/open-telemetry/opentelemetry-collector/blob/main/docs/component-stability.md#beta
 [stable]: https://github.com/open-telemetry/opentelemetry-collector/blob/main/docs/component-stability.md#stable
 [core]: https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol
 [contrib]: https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib
@@ -31,6 +29,9 @@ using the gRPC protocol. The valid syntax is described
 [here](https://github.com/grpc/grpc/blob/master/doc/naming.md).
 If a scheme of `https` is used then client transport security is enabled and overrides the `insecure` setting.
 - `tls`: see [TLS Configuration Settings](../../config/configtls/README.md) for the full set of available options.
+- `retry_on_failure`:  see [Retry on Failure](../exporterhelper/README.md#retry-on-failure) for the full set of available options.
+- `sending_queue`: see [Sending Queue](../exporterhelper/README.md#sending-queue) for the full set of available options.
+- `timeout` (default = 5s): Time to wait per individual attempt to send data to a backend.
 
 Example:
 

@@ -63,6 +63,8 @@ type CheckConsumeContractParams struct {
 	// GenerateCount specifies the number of times to call the generator.Generate()
 	// for each test scenario.
 	GenerateCount int
+	// prevent unkeyed literal initialization
+	_ struct{}
 }
 
 // CheckConsumeContract checks the contract between the receiver and its next consumer. For the contract
@@ -113,11 +115,11 @@ func checkConsumeContractScenario(params CheckConsumeContractParams, decisionFun
 	var err error
 	switch params.Signal {
 	case pipeline.SignalLogs:
-		receiver, err = params.Factory.CreateLogs(ctx, NewNopSettings(), params.Config, consumer)
+		receiver, err = params.Factory.CreateLogs(ctx, NewNopSettings(params.Factory.Type()), params.Config, consumer)
 	case pipeline.SignalTraces:
-		receiver, err = params.Factory.CreateTraces(ctx, NewNopSettings(), params.Config, consumer)
+		receiver, err = params.Factory.CreateTraces(ctx, NewNopSettings(params.Factory.Type()), params.Config, consumer)
 	case pipeline.SignalMetrics:
-		receiver, err = params.Factory.CreateMetrics(ctx, NewNopSettings(), params.Config, consumer)
+		receiver, err = params.Factory.CreateMetrics(ctx, NewNopSettings(params.Factory.Type()), params.Config, consumer)
 	default:
 		require.FailNow(params.T, "must specify a valid DataType to test for")
 	}
@@ -220,7 +222,7 @@ func (ds idSet) compare(other idSet) (missingInOther, onlyInOther []UniqueIDAttr
 			onlyInOther = append(onlyInOther, k)
 		}
 	}
-	return
+	return missingInOther, onlyInOther
 }
 
 // merge another set into this one and return a list of duplicate ids.
@@ -232,7 +234,7 @@ func (ds idSet) merge(other idSet) (duplicates []UniqueIDAttrVal) {
 			ds[k] = v
 		}
 	}
-	return
+	return duplicates
 }
 
 // mergeSlice merges another set into this one and return a list of duplicate ids.
@@ -244,7 +246,7 @@ func (ds idSet) mergeSlice(other []UniqueIDAttrVal) (duplicates []UniqueIDAttrVa
 			ds[id] = true
 		}
 	}
-	return
+	return duplicates
 }
 
 // union computes the union of this and another sets. A new set if created to return the result.
@@ -261,7 +263,7 @@ func (ds idSet) union(other idSet) (union idSet, duplicates []UniqueIDAttrVal) {
 			union[k] = v
 		}
 	}
-	return
+	return union, duplicates
 }
 
 // A function that returns a value indicating what the receiver's next consumer decides

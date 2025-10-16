@@ -5,6 +5,7 @@ package normal // import "go.opentelemetry.io/collector/exporter/debugexporter/i
 
 import (
 	"bytes"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -23,10 +24,18 @@ func NewNormalProfilesMarshaler() pprofile.Marshaler {
 
 func (normalProfilesMarshaler) MarshalProfiles(pd pprofile.Profiles) ([]byte, error) {
 	var buffer bytes.Buffer
+	dic := pd.Dictionary()
+
 	for i := 0; i < pd.ResourceProfiles().Len(); i++ {
 		resourceProfiles := pd.ResourceProfiles().At(i)
+
+		buffer.WriteString(fmt.Sprintf("ResourceProfiles #%d%s%s\n", i, writeResourceDetails(resourceProfiles.SchemaUrl()), writeAttributesString(resourceProfiles.Resource().Attributes())))
+
 		for j := 0; j < resourceProfiles.ScopeProfiles().Len(); j++ {
 			scopeProfiles := resourceProfiles.ScopeProfiles().At(j)
+
+			buffer.WriteString(fmt.Sprintf("ScopeProfiles #%d%s%s\n", i, writeScopeDetails(scopeProfiles.Scope().Name(), scopeProfiles.Scope().Version(), scopeProfiles.SchemaUrl()), writeAttributesString(scopeProfiles.Scope().Attributes())))
+
 			for k := 0; k < scopeProfiles.Profiles().Len(); k++ {
 				profile := scopeProfiles.Profiles().At(k)
 
@@ -35,10 +44,15 @@ func (normalProfilesMarshaler) MarshalProfiles(pd pprofile.Profiles) ([]byte, er
 				buffer.WriteString(" samples=")
 				buffer.WriteString(strconv.Itoa(profile.Sample().Len()))
 
-				if profile.Attributes().Len() > 0 {
-					profileAttributes := writeAttributes(profile.Attributes())
+				if profile.AttributeIndices().Len() > 0 {
+					attrs := []string{}
+					for _, i := range profile.AttributeIndices().AsRaw() {
+						a := dic.AttributeTable().At(int(i))
+						attrs = append(attrs, fmt.Sprintf("%s=%s", dic.StringTable().At(int(a.KeyStrindex())), a.Value().AsString()))
+					}
+
 					buffer.WriteString(" ")
-					buffer.WriteString(strings.Join(profileAttributes, " "))
+					buffer.WriteString(strings.Join(attrs, " "))
 				}
 
 				buffer.WriteString("\n")

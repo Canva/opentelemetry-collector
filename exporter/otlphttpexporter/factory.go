@@ -55,7 +55,7 @@ func createDefaultConfig() component.Config {
 // signalOverrideURL is the URL specified in the signal specific configuration (empty if not specified).
 // signalName is the name of the signal, e.g. "traces", "metrics", "logs".
 // signalVersion is the version of the signal, e.g. "v1" or "v1development".
-func composeSignalURL(oCfg *Config, signalOverrideURL string, signalName string, signalVersion string) (string, error) {
+func composeSignalURL(oCfg *Config, signalOverrideURL, signalName, signalVersion string) (string, error) {
 	switch {
 	case signalOverrideURL != "":
 		_, err := url.Parse(signalOverrideURL)
@@ -63,13 +63,13 @@ func composeSignalURL(oCfg *Config, signalOverrideURL string, signalName string,
 			return "", fmt.Errorf("%s_endpoint must be a valid URL", signalName)
 		}
 		return signalOverrideURL, nil
-	case oCfg.Endpoint == "":
+	case oCfg.ClientConfig.Endpoint == "":
 		return "", fmt.Errorf("either endpoint or %s_endpoint must be specified", signalName)
 	default:
-		if strings.HasSuffix(oCfg.Endpoint, "/") {
-			return oCfg.Endpoint + signalVersion + "/" + signalName, nil
+		if strings.HasSuffix(oCfg.ClientConfig.Endpoint, "/") {
+			return oCfg.ClientConfig.Endpoint + signalVersion + "/" + signalName, nil
 		}
-		return oCfg.Endpoint + "/" + signalVersion + "/" + signalName, nil
+		return oCfg.ClientConfig.Endpoint + "/" + signalVersion + "/" + signalName, nil
 	}
 }
 
@@ -161,12 +161,12 @@ func createProfiles(
 	}
 	oCfg := cfg.(*Config)
 
-	oce.profilesURL, err = composeSignalURL(oCfg, "", "profiles", "v1development")
+	oce.profilesURL, err = composeSignalURL(oCfg, oCfg.ProfilesEndpoint, "profiles", "v1development")
 	if err != nil {
 		return nil, err
 	}
 
-	return xexporterhelper.NewProfilesExporter(ctx, set, cfg,
+	return xexporterhelper.NewProfiles(ctx, set, cfg,
 		oce.pushProfiles,
 		exporterhelper.WithStart(oce.start),
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),

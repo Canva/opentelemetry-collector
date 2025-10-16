@@ -2,10 +2,12 @@
 
 ## Stability levels
 
-The collector components and implementation are in different stages of stability, and usually split between
-functionality and configuration. The status for each component is available in the README file for the component. While
-we intend to provide high-quality components as part of this repository, we acknowledge that not all of them are ready
-for prime time. As such, each component should list its current stability level for each telemetry signal, according to
+The Collector components and implementation are in different stages of stability, and usually split between
+functionality and configuration. While we intend to provide high-quality components as part of this repository,
+we acknowledge that not all of them are ready for prime time. Moreover, the stability of components that can
+handle multiple signals can depend on the signal in question.
+
+As such, each component should list its current stability level for each telemetry signal in its README file, according to
 the following definitions:
 
 ### Development
@@ -30,6 +32,10 @@ required for alpha components, although it is still recommended.
 - when removing a configuration option, components MAY keep the old option for a few minor releases and log a WARN level
   message instructing users to remove the option.
 
+#### Documentation requirements
+
+Alpha components should document how to use them in the most common situations, including:
+- One or more example configuration snippets for the most common use cases.
 
 ### Beta
 
@@ -56,6 +62,21 @@ When renaming or removing a configuration option:
 Additionally, when removing an option:
 - the option MAY be made non-operational already by the same version where it is deprecated
 
+#### Documentation requirements
+
+Beta components should have a set of documentation that documents its usage in most cases,
+including:
+- One or more example configuration snippets for the most common use cases.
+- Advanced configuration options that are known to be used in common environments.
+- All component-specific feature gates including a description for them and when they should be
+  used.
+- Warnings about known limitations and ways to misuse the component.
+
+Receivers that produce a fixed set of telemetry should document the telemetry they produce,
+including:
+- For all signals, the resource attributes that are expected to be present in telemetry.
+- For metrics, the name, description, type, units and attributes of each metric.
+
 ### Stable
 
 The component is ready for general availability. Bugs and performance problems should be reported and there's an expectation that the component owners will work on them. Breaking changes, including configuration options and the component's output are not expected to happen without prior notice, unless under special circumstances.
@@ -65,6 +86,38 @@ The component is ready for general availability. Bugs and performance problems s
 Stable components MUST be compatible between minor versions unless critical security issues are found. In that case, the
 component owner MUST provide a migration path and a reasonable time frame for users to upgrade. The same rules from beta
 components apply to stable when it comes to configuration changes.
+
+#### Testing requirements
+
+Stable components MUST have a comprehensive test suite. In particular they MUST have:
+1. A **test coverage** that exceeds the highest between 80% coverage and the repository-wide
+minimum. The unit test suite SHOULD cover all configuration options. The coverage MUST be shown as
+part of the component documentation.
+2. At least one **lifecycle test** that tests the component's initialization with a valid
+   configuration and ensures proper context propagation if applicable.
+3. At least one **benchmark test** for each stable signal. The component's documentation MUST
+   include a link to the latest run of benchmark results.
+
+#### Documentation requirements
+
+Stable components should have a complete set of documentation, including:
+- One or more example configuration snippets for the most common use cases.
+- All configuration options supported by the component and a description for each of them.
+- All component-specific feature gates including a description for them and when they should be
+  used.
+- All component-specific self-observability features that are not available for other components and
+  what they provide.
+- Compatibility guarantees with external dependencies including the versions it is compatible with
+  and under what conditions.
+- Guidance related to the component's usage in production environments, including how to scale a deployment of this component properly if it needs special considerations.
+- If stateful, how to configure the component to use persistent storage and how to gracefully
+  shutdown and restart the component.
+- Warnings about known limitations and ways to misuse the component.
+
+Receivers that produce a fixed set of telemetry should document the telemetry they produce,
+including:
+- For all signals, the resource attributes that are expected to be present in telemetry.
+- For metrics, the name, description, type, units and attributes of each metric.
 
 #### Observability requirements
 
@@ -175,6 +228,9 @@ If data can be dropped/created/held at multiple distinct points in a component's
 scraping, validation, processing, etc.), it is recommended to define additional attributes to help
 diagnose the specific source of the discrepancy, or to define different signals for each.
 
+The breakdown of emitted telemetry per telemetry level (basic / normal / detailed) should follow
+the guidelines in [the Go package documentation for `configtelemetry`](/config/configtelemetry/doc.go).
+
 ### Deprecated
 
 The component is planned to be removed in a future version and no further support will be provided. Note that new issues will likely not be worked on. When a component enters "deprecated" mode, it is expected to exist for at least two minor releases. See the component's readme file for more details on when a component will cease to exist.
@@ -188,11 +244,84 @@ they have no active code owners from the vendor even if there are other code own
 owners may petition for its continued maintenance if they want, at which point the component will no
 longer be considered vendor-specific.
 
+## Moving between stability levels
+
+Components can move between stability levels. The valid transitions are described in the following diagram:
+
+```mermaid
+stateDiagram-v2
+    state Maintained {
+    InDevelopment --> Alpha
+    Alpha --> Beta
+    Beta --> Stable
+    }
+
+    InDevelopment: In Development
+
+    Maintained --> Unmaintained
+    Unmaintained --> Maintained
+    Maintained --> Deprecated
+    Deprecated --> Maintained: (should be rare)
+```
+
+To move within the 'Maintained' ladder ("graduate"), the process for doing so is as follows:
+
+1. One of the component owners should file an issue with the 'Graduation' issue template to request
+   the graduation.
+2. An approver is assigned in a rotating basis to evaluate the request and provide feedback. For
+   vendor specific components, the approver should be from a different employer to the one owning
+   the component.
+3. If approved, a PR to change the stability level should be opened and MUST be approved by all
+   listed code owners.
+
+## Graduation criteria
+
+In addition to the requirements outlined above, additional criteria should be met before a component
+can graduate to a higher stability level. These ensure that the component is ready for the increased
+usage and scrutiny that comes with a higher stability level, and that the community around it is
+sufficiently healthy.
+
+If the graduation criteria are not met, the approver should provide feedback on what is missing and
+how to address it. The component owners can then address the feedback and re-request graduation on
+the same issue.
+
+## In development to alpha
+
+No additional criteria are required to graduate from development to alpha.
+The component still needs to meet the general requirements for alpha components.
+
+## Alpha to beta
+
+To graduate any signal from alpha to beta on a component:
+1. The component MUST have at least two active code owners.
+3. Within the 30 days prior to the graduation request, the code owners MUST have reviewed and
+   replied to at least 80% of the issues and pull requests opened against the component. This
+   excludes general PRs or issues that are not specific to the component itself (e.g. repo-wide API
+   updates). It is not necessary that the issues and PRs are closed or merged, but that they have
+   been reviewed and replied to appropriately.
+
+## Beta to stable
+
+To graduate any signal from beta to stable on a component:
+1. The component MUST have at least three active code owners.
+2. The component benchmark results MUST have been updated within the last 30 days and published in the component's README.
+3. Within the 60 days prior to the graduation request, the code owners MUST have reviewed and
+   replied to at least 80% of the issues and pull requests opened against the component. This
+   excludes general PRs or issues that are not specific to the component itself (e.g. repo-wide API
+   updates). It is not necessary that the issues and PRs are closed or merged, but that they have
+   been reviewed and replied to appropriately.
+
+## Deprecation Information
+
+When a component is moved to deprecated, a deprecation section should indicate the date it was deprecated
+as well as any migration guidance. In some occasions might not be offered migration guidance but reviewers should
+explicitly agree on this, and use a "No migration is offered for this component" hint.
+
 ## Versioning
 
-Components are Go modules and as such follow [semantic versioning](https://semver.org/). Go API stability guarantees are covered in the [VERSIONING.md](../VERSIONING.md) document.
-The versioning of the components applies to all signals simultaneously. For a component to be marked as 1.x it MUST be stable for at least one signal.
-
+For a component to be marked as 1.x it MUST be stable for at least one signal.
 Even if a component has a 1.x or greater version, its behavior for specific signals might change in ways that break end users if the component is not stable for a particular signal.
-Go API stability guarantees apply to ALL signals, regardless of their stability level. 
-This means that signal-specific configuration options MUST NOT be removed or changed in a way that breaks our Go API compatibility promise, even if the signal is not stable.
+
+However, components are Go modules and as such follow [semantic versioning](https://semver.org/). Go API stability guarantees are covered in the [VERSIONING.md](../VERSIONING.md) document.
+The versioning of a component, and the Go API stability guarantees that come with it, apply to ALL signals simultaneously, regardless of their stability level.
+This means that, once a component is marked as 1.x, signal-specific configuration options MUST NOT be removed or changed in a way that breaks our Go API compatibility promise, even if the signal is not stable.

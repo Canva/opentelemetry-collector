@@ -12,7 +12,6 @@ import (
 	"golang.org/x/text/language"
 
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/config/configtelemetry"
 	"go.opentelemetry.io/collector/confmap"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
@@ -28,21 +27,7 @@ func (mn MetricName) RenderUnexported() (string, error) {
 }
 
 type Metric struct {
-	// Enabled defines whether the metric is enabled by default.
-	Enabled bool `mapstructure:"enabled"`
-
-	// Warnings that will be shown to user under specified conditions.
-	Warnings Warnings `mapstructure:"warnings"`
-
-	// Description of the metric.
-	Description string `mapstructure:"description"`
-
-	// The stability level of the metric.
-	Stability Stability `mapstructure:"stability"`
-
-	// ExtendedDocumentation of the metric. If specified, this will
-	// be appended to the description used in generated documentation.
-	ExtendedDocumentation string `mapstructure:"extended_documentation"`
+	Signal `mapstructure:",squash"`
 
 	// Optional can be used to specify metrics that may
 	// or may not be present in all cases, depending on configuration.
@@ -58,13 +43,8 @@ type Metric struct {
 	// Histogram stores metadata for histogram metric type
 	Histogram *Histogram `mapstructure:"histogram,omitempty"`
 
-	// Attributes is the list of attributes that the metric emits.
-	Attributes []AttributeName `mapstructure:"attributes"`
-
-	// Level specifies the minimum `configtelemetry.Level` for which
-	// the metric will be emitted. This only applies to internal telemetry
-	// configuration.
-	Level configtelemetry.Level `mapstructure:"level"`
+	// Override the default prefix for the metric name.
+	Prefix string `mapstructure:"prefix"`
 }
 
 type Stability struct {
@@ -73,10 +53,10 @@ type Stability struct {
 }
 
 func (s Stability) String() string {
-	if len(s.Level) == 0 || strings.EqualFold(s.Level, component.StabilityLevelStable.String()) {
+	if s.Level == "" || strings.EqualFold(s.Level, component.StabilityLevelStable.String()) {
 		return ""
 	}
-	if len(s.From) > 0 {
+	if s.From != "" {
 		return fmt.Sprintf(" [%s since %s]", s.Level, s.From)
 	}
 	return fmt.Sprintf(" [%s]", s.Level)
@@ -178,7 +158,7 @@ func (mit MetricInputType) HasMetricInputType() bool {
 	return mit.InputType != ""
 }
 
-// Type returns name of the datapoint type.
+// String returns name of the datapoint type.
 func (mit MetricInputType) String() string {
 	return mit.InputType
 }
@@ -216,7 +196,7 @@ func (mvt *MetricValueType) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// Type returns name of the datapoint type.
+// String returns name of the datapoint type.
 func (mvt MetricValueType) String() string {
 	return mvt.ValueType.String()
 }
@@ -264,7 +244,7 @@ func (d *Gauge) HasAggregated() bool {
 }
 
 func (d *Gauge) Instrument() string {
-	instrumentName := cases.Title(language.English).String(d.MetricValueType.BasicType())
+	instrumentName := cases.Title(language.English).String(d.BasicType())
 
 	if d.Async {
 		instrumentName += "Observable"
@@ -320,7 +300,7 @@ func (d *Sum) HasAggregated() bool {
 }
 
 func (d *Sum) Instrument() string {
-	instrumentName := cases.Title(language.English).String(d.MetricValueType.BasicType())
+	instrumentName := cases.Title(language.English).String(d.BasicType())
 
 	if d.Async {
 		instrumentName += "Observable"
@@ -356,11 +336,11 @@ func (d *Histogram) HasMonotonic() bool {
 }
 
 func (d *Histogram) HasAggregated() bool {
-	return false
+	return true
 }
 
 func (d *Histogram) Instrument() string {
-	instrumentName := cases.Title(language.English).String(d.MetricValueType.BasicType())
+	instrumentName := cases.Title(language.English).String(d.BasicType())
 	return instrumentName + d.Type()
 }
 

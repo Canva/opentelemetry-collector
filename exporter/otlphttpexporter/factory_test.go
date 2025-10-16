@@ -29,7 +29,7 @@ func TestCreateDefaultConfig(t *testing.T) {
 	require.NoError(t, componenttest.CheckConfigStruct(cfg))
 	ocfg, ok := factory.CreateDefaultConfig().(*Config)
 	assert.True(t, ok)
-	assert.Equal(t, "", ocfg.ClientConfig.Endpoint)
+	assert.Empty(t, ocfg.ClientConfig.Endpoint)
 	assert.Equal(t, 30*time.Second, ocfg.ClientConfig.Timeout, "default timeout is 30 second")
 	assert.True(t, ocfg.RetryConfig.Enabled, "default retry is enabled")
 	assert.Equal(t, 300*time.Second, ocfg.RetryConfig.MaxElapsedTime, "default retry MaxElapsedTime")
@@ -37,7 +37,7 @@ func TestCreateDefaultConfig(t *testing.T) {
 	assert.Equal(t, 30*time.Second, ocfg.RetryConfig.MaxInterval, "default retry MaxInterval")
 	assert.True(t, ocfg.QueueConfig.Enabled, "default sending queue is enabled")
 	assert.Equal(t, EncodingProto, ocfg.Encoding)
-	assert.Equal(t, configcompression.TypeGzip, ocfg.Compression)
+	assert.Equal(t, configcompression.TypeGzip, ocfg.ClientConfig.Compression)
 }
 
 func TestCreateMetrics(t *testing.T) {
@@ -45,7 +45,7 @@ func TestCreateMetrics(t *testing.T) {
 	cfg := factory.CreateDefaultConfig().(*Config)
 	cfg.ClientConfig.Endpoint = "http://" + testutil.GetAvailableLocalAddress(t)
 
-	set := exportertest.NewNopSettings()
+	set := exportertest.NewNopSettings(factory.Type())
 	oexp, err := factory.CreateMetrics(context.Background(), set, cfg)
 	require.NoError(t, err)
 	require.NotNil(t, oexp)
@@ -53,7 +53,7 @@ func TestCreateMetrics(t *testing.T) {
 
 func clientConfig(endpoint string, headers map[string]configopaque.String, tlsSetting configtls.ClientConfig, compression configcompression.Type) confighttp.ClientConfig {
 	clientConfig := confighttp.NewDefaultClientConfig()
-	clientConfig.TLSSetting = tlsSetting
+	clientConfig.TLS = tlsSetting
 	clientConfig.Compression = compression
 	if endpoint != "" {
 		clientConfig.Endpoint = endpoint
@@ -164,7 +164,7 @@ func TestCreateTraces(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			factory := NewFactory()
-			set := exportertest.NewNopSettings()
+			set := exportertest.NewNopSettings(factory.Type())
 			consumer, err := factory.CreateTraces(context.Background(), set, tt.config)
 
 			if tt.mustFailOnCreate {
@@ -193,7 +193,7 @@ func TestCreateLogs(t *testing.T) {
 	cfg := factory.CreateDefaultConfig().(*Config)
 	cfg.ClientConfig.Endpoint = "http://" + testutil.GetAvailableLocalAddress(t)
 
-	set := exportertest.NewNopSettings()
+	set := exportertest.NewNopSettings(factory.Type())
 	oexp, err := factory.CreateLogs(context.Background(), set, cfg)
 	require.NoError(t, err)
 	require.NotNil(t, oexp)
@@ -204,7 +204,18 @@ func TestCreateProfiles(t *testing.T) {
 	cfg := factory.CreateDefaultConfig().(*Config)
 	cfg.ClientConfig.Endpoint = "http://" + testutil.GetAvailableLocalAddress(t)
 
-	set := exportertest.NewNopSettings()
+	set := exportertest.NewNopSettings(factory.Type())
+	oexp, err := factory.(xexporter.Factory).CreateProfiles(context.Background(), set, cfg)
+	require.NoError(t, err)
+	require.NotNil(t, oexp)
+}
+
+func TestCreateProfilesWithCustomEndpoint(t *testing.T) {
+	factory := NewFactory()
+	cfg := factory.CreateDefaultConfig().(*Config)
+	cfg.ProfilesEndpoint = "http://" + testutil.GetAvailableLocalAddress(t) + "/custom/profiles"
+
+	set := exportertest.NewNopSettings(factory.Type())
 	oexp, err := factory.(xexporter.Factory).CreateProfiles(context.Background(), set, cfg)
 	require.NoError(t, err)
 	require.NotNil(t, oexp)
@@ -231,4 +242,16 @@ func TestComposeSignalURL(t *testing.T) {
 	url, err = composeSignalURL(cfg, "", "traces", "v2")
 	require.NoError(t, err)
 	assert.Equal(t, "http://localhost:4318/v2/traces", url)
+
+	// Test profiles endpoint with v1development
+	cfg.ClientConfig.Endpoint = "http://localhost:4318"
+	url, err = composeSignalURL(cfg, "", "profiles", "v1development")
+	require.NoError(t, err)
+	assert.Equal(t, "http://localhost:4318/v1development/profiles", url)
+
+	// Test with custom profiles endpoint override
+	cfg.ClientConfig.Endpoint = "http://localhost:4318"
+	url, err = composeSignalURL(cfg, "http://custom:9090/profiles", "profiles", "v1development")
+	require.NoError(t, err)
+	assert.Equal(t, "http://custom:9090/profiles", url)
 }

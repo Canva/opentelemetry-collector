@@ -7,6 +7,612 @@ If you are looking for user-facing changes, check out [CHANGELOG.md](./CHANGELOG
 
 <!-- next version -->
 
+## v1.43.0/v0.137.0
+
+### 🛑 Breaking changes 🛑
+
+- `pkg/exporterhelper`: Remove all experimental symbols in exporterhelper (#11143)
+  They have all been moved to xexporterhelper
+  
+
+### 🚩 Deprecations 🚩
+
+- `all`: service/telemetry.TracesConfig is deprecated (#13904)
+  This type alias has been added to otelconftelemetry.TracesConfig,
+  where the otelconf-based telemetry implementation now lives.
+  
+
+### 💡 Enhancements 💡
+
+- `all`: Mark configoptional as stable (#13403)
+- `all`: Mark configauth module as 1.0 (#9476)
+- `pkg/pdata`: Mark featuregate pdata.useCustomProtoEncoding as stable (#13883)
+
+<!-- previous-version -->
+
+## v1.42.0/v0.136.0
+
+### 🛑 Breaking changes 🛑
+
+- `exporterhelper`: Remove deprecated function NewRequestsSizer (#13803)
+- `pdata/pprofile`: Upgrade the OTLP protobuf definitions to version 1.8.0 (#13758, #13825, #13839)
+- `pdata/pprofile`: Remove deprecated ProfilesDictionary method (#13858)
+
+### 🚩 Deprecations 🚩
+
+- `exporterhelper`: Deprecate all experimental symbols in exporterhelper and move them to xexporterhelper (#11143)
+
+### 💡 Enhancements 💡
+
+- `configoptional`: Add `GetOrInsertDefault` method to `configoptional.Optional` (#13856)
+  This method inserts a default or zero value into a `None`/`Default` `Optional` before `Get`ting its inner value.
+  
+- `exporter`: Stabilize exporter module. (#12978)
+  This does not stabilize the exporterhelper module or configuration
+- `pdata`: Upgrade the OTLP protobuf definitions to version 1.8.0 (#13758)
+
+<!-- previous-version -->
+
+## v1.41.0/v0.135.0
+
+### 🛑 Breaking changes 🛑
+
+- `pdata/pprofile`: Remove deprecated AddAttribute method (#13764)
+
+### 💡 Enhancements 💡
+
+- `configmiddleware`: Stabilize `configmiddleware` module (#13422)
+  This only stabilizes the configuration interface but does not stabilize the middlewares themselves or the way of implementing them.
+- `xpdata`: Add experimental MapBuilder struct to optimize pcommon.Map construction (#13617)
+
+<!-- previous-version -->
+
+## v1.40.0/v0.134.0
+
+### 💡 Enhancements 💡
+
+- `exporterhelper`: Split exporterhelper into a separate module (#12985)
+
+<!-- previous-version -->
+
+## v1.39.0/v0.133.0
+
+### 🛑 Breaking changes 🛑
+
+- `configgrpc`: Set `tcp` as the default transport type (#13657)
+  gRPC is generally used with HTTP/2, so this will simplify usage for most components.
+
+### 🚩 Deprecations 🚩
+
+- `pdata/pprofile`: Deprecate Profiles.ProfilesDictionary in favor of Profiles.Dictionary. (#13644)
+
+### 💡 Enhancements 💡
+
+- `pdata`: Add support for local memory pooling for data objects. (#13678)
+  This is still an early experimental (alpha) feature. Do not recommended to be used production. To enable use "--featuregate=+pdata.useProtoPooling"
+
+### 🧰 Bug fixes 🧰
+
+- `configoptional`: Allow validating nested types (#13579)
+  `configoptional.Optional` now implements `xconfmap.Validator`
+
+<!-- previous-version -->
+
+## v1.38.0/v0.132.0
+
+### 🛑 Breaking changes 🛑
+
+- `componenttest`: Remove `GetFactory` from the host returned by `NewNopHost` (#13577)
+  This method is no longer part of the `component.Host` interface.
+
+### 💡 Enhancements 💡
+
+- `exporterhelper`: Provide an interface `queue_batch.Setting.MergeCtx` so users can control how context values are preserved or combined (#13320)
+  By supplying a custom mergeCtx function, users can control how context values are preserved or combined.
+  The default behavior is to preserve no context values.
+  
+- `pdata`: Generate Logs/Traces/Metrics/Profiles and p[log|trace|metric|profile]ExportResponse with pdatagen. (#13597)
+  This change brings consistency on how these structs are written and remove JSON marshaling/unmarshaling hand written logic.
+- `pdata`: Avoid unnecessary buffer copy when JSON marshal fails. (#13598)
+- `pipeline`: Mark module as stable (#12831)
+
+<!-- previous-version -->
+
+## v1.37.0/v0.131.0
+
+### 🛑 Breaking changes 🛑
+
+- `configgrpc`: Update optional fields to use `configoptional.Optional` field for optional values. (#13252, #13364)
+  Specifically, the following fields have been updated to `configoptional`:
+  - `KeepaliveServerConfig.ServerParameters` (`KeepaliveServerParameters` type)
+  - `KeepaliveServerConfig.EnforcementPolicy` (`KeepaliveEnforcementPolicy` type)
+  
+- `xexporterhelper`: Remove deprecated NewProfilesExporter function from xexporterhelper package (#13391)
+
+### 💡 Enhancements 💡
+
+- `consumererror`: Add new "Downstream" error marker (#13234)
+  This new error wrapper type indicates that the error returned by a component's
+  `Consume` method is not an internal failure of the component, but instead
+  was passed through from another component further downstream.
+  This is used internally by the new pipeline instrumentation feature to
+  determine the `outcome` of a component call. This wrapper is not intended to
+  be used by components directly.
+  
+- `pdata/pprofile`: Introduce `Equal` method on the `Function` type (#13222)
+- `pdata/pprofile`: Introduce `Equal` method on the `Link` type (#13223)
+- `pdata/pprofile`: Add new helper method `SetFunction` to set a new function on a line. (#13222)
+- `pdata/pprofile`: Add new helper method `SetLink` to set a new link on a sample. (#13223)
+- `pdata/pprofile`: Add new helper method `SetString` to set or retrieve the index of a value in the StringTable. (#13225)
+
+<!-- previous-version -->
+
+## v1.36.1/v0.130.1
+
+<!-- previous-version -->
+
+No API-only changes in this release.
+
+## v1.36.0/v0.130.0
+
+### 🛑 Breaking changes 🛑
+
+- `exporterhelper`: Use configoptional for sending_queue::batch field (#13345)
+- `configgrpc`: Update optional fields to use `configoptional.Optional` field for optional values. (#13250, #13252)
+  Components using `configgrpc` package may need to update config values.
+- `confighttp`: Use configoptional.Optional in confighttp (#9478)
+- `exporterhelper`: Remove sizer map in favor of items/bytes sizers. Request based is automatically supported. (#13262)
+- `pdata/pprofile`: Remove field Profile.StartTime from pdata/pprofile (#13315)
+  Remove Profile.StartTime from OTel Profiling signal.
+- `exporterhelper`: Remove deprecated old batcher config (#13003)
+- `exporter/otlp`: Remove deprecated batcher config from OTLP, use queuebatch (#13339)
+
+### 🚩 Deprecations 🚩
+
+- `exporterhelper`: Deprecate NewRequestsSizer always supported. (#13262)
+- `xexporterhelper`: Introduce NewProfiles method and deprecate NewProfilesExporter (#13372)
+
+### 💡 Enhancements 💡
+
+- `consumererror`: Add `Error` type (#7047)
+  This type can contain information about errors that allow components (e.g. exporters)
+  to communicate error information back up the pipeline.
+  
+- `pdata`: Document that changing pcommon.Map (Remove/removeIf/Put*) invalidates Value references obtained via Get. (#13073)
+- `cmd/mdatagen`: Add support for optional attribute (#12571)
+- `exporterhelper`: Add support to configure a different Sizer for the batcher than the queue (#13313)
+- `pdata`: Add support for the new resource-entity reference API as part of the experimental xpdata package. (#13264)
+
+<!-- previous-version -->
+
+## v1.35.0/v0.129.0
+
+### 🛑 Breaking changes 🛑
+
+- `semconv`: Removing deprecated semconv package (#13071)
+- `configgrpc,confighttp`: Unify return type of `NewDefault*Config` functions to return a struct instead of a pointer. (#13169)
+- `exporterhelper`: QueueBatchEncoding interface is changed to support marshaling and unmarshaling of request context. (#13188)
+
+### 💡 Enhancements 💡
+
+- `pdata/pprofile`: Introduce `Equal` method on the `Mapping` type (#13197)
+- `configoptional`: Make unmarshaling into `None[T]` work the same as unmarshaling into `(*T)(nil)`. (#13168)
+- `configoptional`: Add a confmap.Marshaler implementation for configoptional.Optional (#13196)
+- `pdata/pprofile`: Introduce `Equal` methods on the `Line` and `Location` types (#13150)
+- `pdata/pprofile`: Add new helper method `SetMapping` to set a new mapping on a location. (#13197)
+
+### 🧰 Bug fixes 🧰
+
+- `confmap`: Distinguish between empty and nil values when marshaling `confmap.Conf` structs. (#13196)
+
+<!-- previous-version -->
+
+## v1.34.0/v0.128.0
+
+### 🛑 Breaking changes 🛑
+
+- `exporterhelper`: Remove deprecated NewProfilesRequestExporter function from xexporterhelper package (#13157)
+- `confighttp`: Remove pointer to field `cookies` in confighttp.ClientConfig (#13116)
+- `otlpreceiver`: Use `configoptional.Optional` to define optional configuration sections in the OTLP receiver. Remove `Unmarshal` method. (#13119)
+- `confighttp,configgrpc`: Rename `ClientConfig.TLSSetting` and `ServerConfig.TLSSetting` to `ClientConfig.TLS` and `ServerConfig.TLS`. (#13115)
+- `pdata/pprofile`: Upgrade the OTLP protobuf definitions to version 1.7.0 (#13075)
+  Note that the batcher is temporarily a noop.
+- `pipeline`: Remove deprecated MustNewID[WithName] (#13139)
+
+### 🚀 New components 🚀
+
+- `configoptional`: Add a new configoptional module to support optional configuration fields. (#12981)
+
+### 💡 Enhancements 💡
+
+- `pdata`: Introduce `MoveAndAppendTo` methods to the generated primitive slices (#13074)
+- `pdata`: Upgrade the OTLP protobuf definitions to version 1.7.0 (#13075)
+
+### 🧰 Bug fixes 🧰
+
+- `confmap`: Correctly distinguish between `nil` and empty map values on the `ToStringMap` method (#13161)
+  This means that `ToStringMap()` method can now return a nil map if the original value was `nil`.
+  If you were not doing so already, make sure to check for `nil` before writing to the map to avoid panics.
+  
+- `confighttp`: Make the `NewDefaultServerConfig` function return a nil TLS config by default. (#13129)
+  - The previous default was a TLS config with no certificates, which would fail at runtime.
+  
+
+<!-- previous-version -->
+
+## v1.33.0/v0.127.0
+
+### 🛑 Breaking changes 🛑
+
+- `mdatagen`: Add context parameter for recording event to set traceID and spanID (#12571)
+- `otlpreceiver`: Use wrapper type for URL paths (#13046)
+
+### 🚩 Deprecations 🚩
+
+- `pipeline`: Deprecate MustNewID and MustNewIDWithName (#12831)
+- `pdata/profile`: Replace AddAttribute with the PutAttribute helper method to modify the content of attributable records. (#12798)
+
+### 💡 Enhancements 💡
+
+- `consumer/consumertest`: Add context to sinks (#13039)
+- `cmd/mdatagen`: Add events in generated documentation (#12571)
+- `confmap`: Add a `Conf.Delete` method to remove a path from the configuration map. (#13064)
+- `confmap`: Support running Unmarshal hooks on nil values. (#12981)
+
+<!-- previous-version -->
+
+## v1.32.0/v0.126.0
+
+### 🚩 Deprecations 🚩
+
+- `configauth`: Deprecate `configauth.Authentication` in favor of `configauth.Config`. (#12875)
+
+### 💡 Enhancements 💡
+
+- `cmd/mdatagen`: Add type definition for events in mdatagen (#12571)
+- `cmd/mdatagen`: Add functions for processing structured events in mdatagen (#12571)
+
+<!-- previous-version -->
+
+## v1.31.0/v0.125.0
+
+### 🚩 Deprecations 🚩
+
+- `extensionauthtest`: Deprecate NewErrorClient in favor of NewErrClient. (#12874)
+
+### 💡 Enhancements 💡
+
+- `xextension/storage`: ErrStorageFull error added to xextension/storage contract (#12925)
+- `pdata`: Add MoveTo to pcommon.Value, only type missing this (#12877)
+
+### 🧰 Bug fixes 🧰
+
+- `pdata`: Fix MoveTo when moving to the same destination (#12887)
+
+<!-- previous-version -->
+
+## v1.30.0/v0.124.0
+
+### 🛑 Breaking changes 🛑
+
+- `exporterbatcher`: Remove deprecated package exporterbatcher (#12780)
+- `exporterqueue`: Remove deprecated package exporterqueue (#12779)
+
+### 💡 Enhancements 💡
+
+- `mdatagen`: Add variable for metric name in mdatagen (#12459)
+  Access metric name via `metadata.MetricsInfo.<metric-variable>.Name`
+- `client`: Add support for iterating over client metadata keys (#12804)
+- `service`: Adds the GetFactory interface to the hostcapabilities package (#12789)
+- `cmd/mdatagen`: Add the foundational changes necessary for supporting logs data in `mdatagen` (#12571)
+
+<!-- previous-version -->
+
+## v1.29.0/v0.123.0
+
+### 🛑 Breaking changes 🛑
+
+- `otlpreceiver/otlpexporter/otlphttpexporter`: Avoid using go embedded messages in Config (#12718)
+- `exporterqueue`: Move Queue interface to internal, disallow alternative implementations (#12680)
+- `extensionauth, configauth`: Remove deprecated types and functions from `extensionauth` and `configauth` packages. (#12672)
+  This includes:
+  - `extensionauth.NewClient`,
+  - `extensionauth.ClientOption` and all its implementations,
+  - `extensionauth.NewServer`,
+  - `extensionauth.ServerOption` and all its implementations and
+  - `configauth.Authenticator.GetClientAuthenticator`.
+  
+- `exporterhelper`: Remove deprecated converter types from exporterhelper (#12686)
+- `exporterbatch`: Remove deprecated fields `min_size_items` and `max_size_items` from batch config. (#12684)
+
+### 🚩 Deprecations 🚩
+
+- `exporterhelper`: Deprecate BatcherConfig, SizeConfig and WithBatcher in favor of the new QueueBatchConfig. (#12748)
+- `exporterbatcher`: Deprecated Config, SizeConfig, SizerType, SizerType[Requests|Items|Bytes], NewDefaultConfig. Use alias from exporterhelper. (#12707)
+- `exporterqueue`: Deprecated Config, NewDefaultConfig, Encoding, ErrQueueFull. Use alias from exporterhelper. (#12706)
+- `exporterhelper`: Deprecate exporterhelper WithRequestQueue in favor of WithQueueBatch (#12679)
+- `exporterhelper`: Deprecate `QueueConfig` in favor of `QueueBatchConfig`. (#12746)
+
+### 💡 Enhancements 💡
+
+- `extensionauth`: Mark module as stable (#11006)
+- `processor`: Mark module as stable. (#12677)
+- `processorhelper`: Split processorhelper into a separate module. (#12678)
+
+<!-- previous-version -->
+
+## v1.28.1/v0.122.1
+
+<!-- previous-version -->
+
+## v1.28.0/v0.122.0
+
+### 🛑 Breaking changes 🛑
+
+- `auth, authtest`: Remove deprecated modules extension/auth and extension/auth/authtest (#12543)
+  Use extension/extensionauth and extension/extensionauth/extensionauthtest instead.
+  
+- `extensionauth`: Remove deprecated methods from the `Func` types. (#12547)
+- `extensiontest, connectortest, processortest, receivertest, scrapertest, exportertest`: Remove deprecated `NewNopSettingsWithType` functions, use `NewNopSettings` instead. (#12221)
+- `extensionauthtest`: Remove the `extensionauthtest.MockClient` struct. (#12567)
+  - Use `extensionauthtest.NewNopClient` to create a client with a noop implementation. 
+  - Use `extensionauthtest.NewErrorClient` to create a client that always returns an error.
+  - Implement the `extensionauth` interfaces for custom mock client implementations.
+  
+- `component/componenttest`: Remove the deprecated componenttest.TestTelemetry in favor of componenttest.Telemetry (#12419)
+- `exporterhelper`: Remove the Request.Export function in favor of an equivalent request consume func in the New[Traces|Metrics|Logs|Profiles]Request (#12637)
+
+### 🚩 Deprecations 🚩
+
+- `exporterhelper`: Deprecate per signal converter in favor of generic version (#12631)
+- `extensionauth`: Deprecate `extensionauth.NewClient` and `extensionauth.NewServer`. (#12574)
+  - Manually implement the interfaces instead.
+  
+- `configauth`: Deprecate `configauth.Authenticator.GetClientAuthenticator`. (#12574)
+  - Use the per-protocol methods instead.
+  
+
+### 🚀 New components 🚀
+
+- `receiverhelper`: Split `receiverhelper` into a separate module (#28328)
+
+### 💡 Enhancements 💡
+
+- `cmd/mdatagen`: Add `supportsSignal` func for `Metadata` type in `mdatagen`. (#12640)
+- `receiver`: Mark module as stable (#12513)
+- `pdata/pcommon`: Introduce `Equal()` method for comparison equality to `Value`, `ByteSlice`, `Float64Slice`, `Int32Slice`, `Int64Slice`, `StringSlice`, `Uint64Slice`, `Map` and `Slice` (#12594)
+- `pdata`: Add iterator All method to pdata slices and map types. (#11982)
+- `pdata/pprofile`: Introduce AddAttribute helper method to modify the content of attributable records (#12206)
+
+<!-- previous-version -->
+
+## v1.27.0/v0.121.0
+
+### 🛑 Breaking changes 🛑
+
+- `exporterqueue`: Remove exporterqueue.Factory in favor of the NewQueue function, and merge configs for memory and persistent. (#12509)
+  As a side effect of this change, no alternative implementation of the queue are supported and the Queue interface will be hidden.
+- `exporterhelper`: Update MergeSplit function signature to use the new SizeConfig (#12486)
+- `extension, connector, processor, receiver, exporter, scraper`: Remove deprecated `Create*` methods from `Create*Func` types. (#12305)
+  The `xconnector.CreateMetricsToProfilesFunc.CreateMetricsToProfiles` method has been removed without a deprecation.
+  
+- `component`: Remove deprecated function and interface `ConfigValidator` and `ValidateConfig`. (#11524)
+  - Use `xconfmap.Validator` and `xconfmap.Validate` instead.
+  
+- `receiver, scraper, processor, exporter, extension`: Remove deprecated MakeFactoryMap functions in favor of generic implementation (#12222)
+- `exporterhelper`: Change the signature of the exporterhelper.WithQueueRequest to accept Encoding instead of the Factory. (#12509)
+- `component/componenttest`: Removing the deprecated `CheckReceiverMetrics` and `CheckReceiverTraces` functions. (#12185)
+
+### 🚩 Deprecations 🚩
+
+- `componenttest`: Deprecated componenttest.TestTelemetry in favor of componenttest.Telemetry (#12419)
+- `connector, exporter, extension, processor, receiver, scraper`: Add type parameter to `NewNopSettings` and deprecate `NewNopSettingsWithType` (#12305)
+- `exporterhelper`: Deprecate MinSizeConfig and MaxSizeItems. (#12486)
+- `extension/extensionauth`: Deprecate methods on `*Func` types. (#12480)
+- `extension/auth, extension/auth/authtest`: Deprecate extension/auth and the related test module in favor of extension/extensionauth (#12478)
+
+### 🚀 New components 🚀
+
+- `service/hostcapabilities`: create `service/hostcapabilities` module (#12296, #12375)
+  Removes getExporters interface in service/internal/graph.
+  Removes getModuleInfos interface in service/internal/graph.
+  Creates interface ExposeExporters in service/hostcapabilities to expose GetExporters function.
+  Creates interface ModuleInfo in service/hostcapabilities to expose GetModuleInfos function.
+  
+
+### 💡 Enhancements 💡
+
+- `exporterhelper`: Adds the config API to support serialized bytes based batching (#3262)
+- `configauth`: Add the `omitempty` mapstructure tag to struct fields (#12191)
+  This results in unset fields not being rendered when marshaling.
+- `confighttp`: Add the `omitempty` mapstructure tag to struct fields (#12191)
+  This results in unset fields not being rendered when marshaling.
+- `otelcol`: Converters are now available in the `components` command. (#11900, #12385)
+- `extension`: Mark module as stable (#11005)
+- `pcommon.Map`: preallocate go map in Map.AsRaw() (#12406)
+- `exporterhelper`: Stabilize exporter.UsePullingBasedExporterQueueBatcher and remove old batch sender (#12425)
+- `service`: Add the `omitempty` mapstructure tag to struct fields (#12191)
+  This results in unset fields not being rendered when marshaling.
+
+### 🧰 Bug fixes 🧰
+
+- `mdatagen`: Fix broken imports in the generated files. (#12298)
+- `processor, connector, exporter, receiver`: Explicitly error out at component creation time if there is a type mismatch. (#12305)
+
+## v1.26.0/v0.120.0
+
+### 🛑 Breaking changes 🛑
+
+- `configauth`: Remove NewDefaultAuthentication (#12223)
+  The value returned by this function will always cause an error on startup.
+  In `configgrpc.Client/ServerConfig.Auth`, `nil` should be used instead to disable authentication.
+  
+- `otelcol`: Make the `ConfigProvider` interface a struct (#12297)
+  Calls to `NewConfigProvider` will now return `*ConfigProvider`,
+  but will otherwise work the same as before.
+  
+- `extension`: Remove `extension.Settings.ModuleInfo` (#12296)
+  - The functionality is now available as an optional, hidden interface on `service`'s implementation of the `Host`
+  
+- `component`: Remove deprecated field `component.TelemetrySettings.MetricsLevel`. (#11061)
+- `confighttp`: Add `ToClientOption` type and add it to signature of `ToClient` method. (#12353)
+  - This has no use for now, it may be used in the future.
+  
+- `mdatagen`: Remove unused not_component config for mdatagen (#12237)
+
+### 🚩 Deprecations 🚩
+
+- `component/componenttest`: Deprecate CheckReceiverMetrics in componenttest (#12185)
+  Use the `metadatatest.AssertEqualMetric` series of functions instead of `obsreporttest.CheckReceiverMetrics`
+- `component/componenttest`: Deprecate CheckReceiverTraces in componenttest (#12185)
+  Use the `metadatatest.AssertEqualMetric` series of functions instead of `obsreporttest.CheckReceiverTraces`
+- `component`: Deprecate `ConfigValidator` and `ValidateConfig` (#11524)
+  Please use `Validator` and `Validate` respectively from `xconfmap`.
+- `receiver, scraper, processor, exporter, extension`: Deprecate existing MakeFactoryMap functions in favor of generic implementation (#12222)
+- `extension, connector, processor, receiver, exporter, scraper`: Deprecate `Create*` methods from `Create*Func` types. (#12305)
+- `extensiontest, connectortest, processortest, receivertest, exportertest, scrapertest`: Deprecate `*test.NewNopSettings` in favor of `*test.NewNopSettingsWithType` (#12305)
+
+### 🚀 New components 🚀
+
+- `xconfmap`: Create the xconfmap module and add the `Validator` interface and `Validate` function to facilitate config validation (#11524)
+
+### 💡 Enhancements 💡
+
+- `configgrpc`: Add the `omitempty` mapstructure tag to struct fields (#12191)
+  This results in unset fields not being rendered when marshaling.
+- `confignet`: Add the `omitempty` mapstructure tag to struct fields (#12191)
+  This results in unset fields not being rendered when marshaling.
+- `configtls`: Add the `omitempty` mapstructure tag to struct fields (#12191)
+  This results in unset fields not being rendered when marshaling.
+- `consumer`: Clarify that data cannot be accessed after Consume* func is called. (#12284)
+- `pdata/pprofile`: Introduce aggregation temporality constants (#12253)
+
+### 🧰 Bug fixes 🧰
+
+- `configgrpc`: Apply configured Headers automatically (#12307)
+  configgrpc now calls metadata.AppendToOutgoingContext automatically in an interceptor.
+  Components that were manually using metadata.NewOutgoingContext as a workaround no longer need to
+  do so, unless they are overwriting or adding header keys.
+  
+- `configgrpc`: Set Auth to nil in NewDefaultClientConfig/NewDefaultServerConfig (#12223)
+  The value that was used previously would always cause an error on startup.
+  
+- `exporterqueue`: Fix async queue to propagate cancellation all they way to the queue (#12282)
+- `otlpreceiver`: Fix OTLP http receiver to correctly set Retry-After (#12367)
+- `extension`: Explicitly error out at extension creation time if there is a type mismatch. (#12305)
+
+## v1.25.0/v0.119.0
+
+### 🛑 Breaking changes 🛑
+
+- `exporterhelper`: Change queue to embed the async consumers. (#12242)
+- `exporterqueue`: Change Queue interface to return a callback instead of an index (#8122)
+- `cmd/mdatagen`: Allow passing OTel Metric SDK options to the generated `SetupTelemetry` function. (#12166)
+- `exporterhelper`: Rename exporter span signal specific attributes (e.g. "sent_spans" / "send_failed_span") to "items.sent" / "items.failed". (#12165)
+- `component`: Change underlying type for `component.Kind` to be a struct. (#12214)
+- `extension`: Change `extension.Extension` to be an interface that embeds `component.Component` instead of an alias (#11443)
+- `component/componenttest`: Remove deprecated `CheckScraperMetrics` functions (#12183)
+- `scraperhelper`: Remove deprecated ScrapperControllerOption and NewScraperControllerMetrics from scraperhelper. (#12147)
+
+### 🚩 Deprecations 🚩
+
+- `metadatatest`: Deprecate metadatatest.Telemetry in favor of componenttest.Telemetry (#12218)
+  metadatatest.Telemetry -> componenttest.Telemetry |
+  metadatatest.SetupTelemetry -> componenttest.NewTelemetry |
+  metadatatest.Telemetry.NewSettings -> metadatatest.NewSettings |
+  metadatatest.Telemetry.AssertMetrics -> metadatatest.AssertEqual* |
+  
+- `component/componenttest`: Deprecate `CheckExporterEnqueue*` functions in componenttest (#12185)
+  Use the `metadatatest.AssertEqualMetric` series of functions instead of `obsreporttest.CheckExporterEnqueue*` functions.
+- `component/componenttest`: Deprecate CheckExporterLogs in componenttest (#12185)
+  Use the `metadatatest.AssertEqualMetric` series of functions instead of `obsreporttest.CheckExporterLogs`
+- `component/componenttest`: Deprecate CheckExporterMetricGauge in componenttest (#12185)
+  Use the `metadatatest.AssertEqualMetric` series of functions instead of `obsreporttest.CheckReceiverMetricGauge`
+- `component/componenttest`: Deprecate CheckExporterMetrics in componenttest (#12185)
+  Use the `metadatatest.AssertEqualMetric` series of functions instead of `obsreporttest.CheckExporterMetrics`
+- `component/componenttest`: Deprecate CheckExporterTraces in componenttest (#12185)
+  Use the `metadatatest.AssertEqualMetric` series of functions instead of `obsreporttest.CheckExporterTraces`
+- `component/componenttest`: Deprecate CheckReceiverLogs in componenttest (#12185)
+  Use the `metadatatest.AssertEqualMetric` series of functions instead of `obsreporttest.CheckReceiverLogs`
+- `mdatagen`: Make registration of callback for async metric always optional. (#12204)
+  Deprecate `metadata.TelemetryBuilder.Init*` and `metadata.With*Callback` in favor of `metadata.TelemetryBuilder.Register*Callback`
+- `component`: Deprecate `component.TelemetrySettings.MetricsLevel` in favor of using views and 'Enabled' method. (#12159)
+  - Components will temporarily need the service to support using views.
+  
+
+### 💡 Enhancements 💡
+
+- `componenttest`: Add helper to get a metric for componenttest.Telemetry (#12215)
+- `componenttest`: Extract componenttest.Telemetry as generic struct for telemetry testing (#12151)
+- `mdatagen`: Generate assert function for each metric in mdatagen (#12179)
+- `metadatatest`: Generate NewSettings that accepts componenttest.Telemetry (#12216)
+- `pdata/pprofile`: Add new helper method `FromAttributeIndices` to build a `pcommon.Map` out of `AttributeIndices`. (#12176)
+- `scraper`: Support logs scraper (#12116)
+- `component`: Allow `component.ValidateConfig` to recurse through all fields in a config object (#11524)
+- `component`: Show path to invalid config in errors returned from `component.ValidateConfig` (#12108)
+
+### 🧰 Bug fixes 🧰
+
+- `mdatagen`: All register callbacks to async instruments can now be unregistered by calling `metadata.TelemetryBuilder.Shutdown()` (#12204)
+- `mdatagen`: Fix bug where Histograms were marked as not supporting temporal aggregation (#12168)
+
+## v1.24.0/v0.118.0
+
+### 🛑 Breaking changes 🛑
+
+- `exporterqueue`: Change Queue Size and Capacity to return explicit int64. (#12076)
+- `receiver/scraperhelper`: Removing the deprecated receiver/scraperhelper package (#12054)
+- `processortest`: Revert the nop_processor.NewNopSettings change, as it is no longer needed (#11433)
+- `experimental/storage`: Remove deprecated package/module experimental/storage (#12109)
+- `mdatagen`: Remove deprecated generated_component_telemetry_test file from being generated and delete it. (#12068)
+- `receivertest`: Remove deprecated receivertest.NewNopFactoryForType (#12110)
+
+### 🚩 Deprecations 🚩
+
+- `componenttest`: Deprecate CheckScraperMetrics in componenttest (#12105)
+  Use `metadatatest.AssertMetrics` instead of `obsreporttest.CheckScraperMetrics`
+- `scraperhelper`: Deprecate `scraperhelper.NewScraperControllerReceiver` and `scraperhelper.ScraperControllerOption`. (#12103)
+  Use `scraperhelper.NewMetricsController` instead of `scraperhelper.NewScraperControllerReceiver` | Use `scraperhelper.ScraperControllerOption` instead of `scraperhelper.ControllerOption`
+
+### 💡 Enhancements 💡
+
+- `exporterhelper`: Add capability for memory and persistent queue to block when add items (#12074)
+- `scraper/scraperhelper`: Add obs_logs for scraper/scraperhelper (#12036)
+  This change adds obs for logs in scraper/scraperhelper, also introduced new metrics for scraping logs.
+- `mdatagen`: Add scraper component type support to mdatagen (#12092)
+- `mdatagen`: Add tracing support in metadatatest (#12106)
+- `exporterhelper`: Change persistent queue to not use sized channel, improve memory usage and simplify sized_channel. (#12060)
+- `confighttp`: Added support for configuring compression levels. (#10467)
+  A new configuration option called CompressionParams has been added to confighttp. | This allows users to configure the compression levels for the confighttp client.
+
+## v1.23.0/v0.117.0
+
+### 🛑 Breaking changes 🛑
+
+- `pdata/pprofile`: Remove duplicate Attributes field from profile (#11932)
+- `connector`: Remove deprecated connectorprofiles module, use xconnector instead. (#11778)
+- `consumererror`: Remove deprecated consumererrorprofiles module, use xconsumererror instead. (#11778)
+- `consumer`: Remove deprecated consumerprofiles module, use xconsumer instead. (#11778)
+- `exporterhelper`: Remove deprecated exporterhelperprofiles module, use xexporterhelper instead. (#11778)
+- `exporter`: Remove deprecated exporterprofiles module, use xexporter instead. (#11778)
+- `pipeline`: Remove deprecated pipelineprofiles module, use xpipeline instead. (#11778)
+- `processorhelper`: Remove deprecated processorhelperprofiles module, use xprocessorhelper instead. (#11778)
+- `processor`: Remove deprecated processorprofiles module, use xprocessor instead. (#11778)
+- `receiver`: Remove deprecated receiverprofiles module, use xreceiver instead. (#11778)
+- `exporterhelper`: Remove Merge function from experimental Request interface (#12012)
+
+### 🚩 Deprecations 🚩
+
+- `mdatagen`: Deprecate component_test in favor of metadatatest (#11812)
+- `receivertest`: Deprecate receivertest.NewNopFactoryForType (#11993)
+- `extension/experimental`: Deprecate extension/experimental in favor of extension/xextension (#12010)
+- `scraperhelper`: Move scraperhelper under scraper and in a separate module. (#11003)
+
+### 💡 Enhancements 💡
+
+- `scrapertest`: Add scrapertest package in a separate module (#11988)
+- `pdata`: Upgrade pdata to opentelemetry-proto v1.5.0 (#11932)
+
 ## v1.22.0/v0.116.0
 
 ### 🛑 Breaking changes 🛑
@@ -55,7 +661,7 @@ If you are looking for user-facing changes, check out [CHANGELOG.md](./CHANGELOG
 - `component`: Make componenttest into its own module (#11464)
 - `expandconverter`: Remove deprecated expandvar converter (#11672)
 - `exporter`: Remove deprecated funcs Create[*]Exporter and [*]ExporterStability (#11662)
-- `exporterhelper`: Remove derprecated NewLogs[Request]Exporter funcs (#11661)
+- `exporterhelper`: Remove deprecated NewLogs[Request]Exporter funcs (#11661)
 - `extension`: Remove deprecated funcs CreateExtension and ExtensionStability (#11663)
 - `processortest`: Remove deprecated func NewUnhealthyProcessorCreateSettings (#11665)
 
@@ -109,14 +715,14 @@ If you are looking for user-facing changes, check out [CHANGELOG.md](./CHANGELOG
   Factory.CreateExtension -> Factory.Create |
   Factory.ExtensionStability -> Factory.Stability
   
-- `exporter`: Deprecate funcs that repeate exporter in name (#11370)
+- `exporter`: Deprecate funcs that repeat exporter in name (#11370)
   Factory.Create[Traces|Metrics|Logs|Profiles]Exporter -> Factory.Create[Traces|Metrics|Logs|Profiles] |
   Factory.[Traces|Metrics|Logs|Profiles]ExporterStability -> Factory.[Traces|Metrics|Logs|Profiles]Stability
   
 
 ### 🚀 New components 🚀
 
-- `consumererrorprofiles`: Add new module consumereerrorprofiles for consumer error profiles. (#11131)
+- `consumererrorprofiles`: Add new module consumererrorprofiles for consumer error profiles. (#11131)
 
 ### 💡 Enhancements 💡
 
@@ -643,7 +1249,7 @@ Use the `ProviderFactories` and `ConverterFactories` fields instead.
   - obsreporttest.TestTelemetry -> componenttest.TestTelemetry
   - obsreporttest.SetupTelemetry -> componenttest.SetupTelemetry
   - obsreporttest.CheckScraperMetrics -> TestTelemetry.CheckScraperMetrics
-  - obserporttest.TestTelemetry.TelemetrySettings -> componenttest.TestTelemetry.TelemetrySettings()
+  - obsreporttest.TestTelemetry.TelemetrySettings -> componenttest.TestTelemetry.TelemetrySettings()
   
 - `confignet`: Deprecates `DialContext` and `ListenContext` functions. Use `Dial` and `Listen` instead. (#9258)
   Unlike the previous `Dial` and `Listen` functions, the new `Dial` and `Listen` functions take a `context.Context` like `DialContext` and `ListenContext`.

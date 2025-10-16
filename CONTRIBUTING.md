@@ -96,6 +96,37 @@ Reporting bugs is an important contribution. Please make sure to include:
 * The OpenTelemetry version you are running
 * If possible, steps to reproduce
 
+### Adding Labels via Comments
+
+In order to facilitate proper label usage and to empower Code Owners, you are able to add labels to issues via comments. To add a label through a comment, post a new comment on an issue starting with `/label`, followed by a space-separated list of your desired labels. Supported labels come from the table below, or correspond to a component defined in the [CODEOWNERS file](.github/CODEOWNERS).
+
+The following general labels are supported:
+
+| Label                    | Label in Comment         |
+|--------------------------|--------------------------|
+| `arm64`                  | `arm64`                  |
+| `good first issue`       | `good-first-issue`       |
+| `help wanted`            | `help-wanted`            |
+| `discussion needed`      | `discussion-needed`      |
+| `os:macos`               | `os:macos`               |
+| `os:windows`             | `os:windows`             |
+| `waiting for author`     | `waiting-for-author`     |
+| `waiting-for-codeowners` | `waiting-for-codeowners` |
+| `bug`                    | `bug`                    |
+| `priority:p0`            | `priority:p0`            |
+| `priority:p1`            | `priority:p1`            |
+| `priority:p2`            | `priority:p2`            |
+| `priority:p3`            | `priority:p3`            |
+| `Stale`                  | `stale`                  |
+
+To delete a label, prepend the label with `-`. Note that you must make a new comment to modify labels; you cannot edit an existing comment.
+
+Example label comment:
+
+```
+/label help-wanted -arm64
+```
+
 ## How to contribute
 
 ### Before you start
@@ -161,7 +192,7 @@ section of the general project contributing guide.
 Working with the project sources requires the following tools:
 
 1. [git](https://git-scm.com/)
-2. [go](https://golang.org/) (version 1.22 and up)
+2. [go](https://golang.org/) (version 1.24 and up)
 3. [make](https://www.gnu.org/software/make/)
 4. [docker](https://www.docker.com/)
 
@@ -218,7 +249,7 @@ before merging (but see the above paragraph about writing good commit messages i
 
 ## General Notes
 
-This project uses Go 1.22.* and [Github Actions.](https://github.com/features/actions)
+This project uses Go 1.24.* and [Github Actions.](https://github.com/features/actions)
 
 It is recommended to run `make gofmt all` before submitting your PR.
 
@@ -269,6 +300,31 @@ During the collector release process, all `./chloggen/*.yaml` files are transcri
 4. Commit and push the file
 
 Alternatively, copy `./.chloggen/TEMPLATE.yaml`, or just create your file from scratch.
+
+## Local Testing
+
+To manually test your changes, follow these steps to build and run the Collector
+locally. Ensure that you execute these commands from the root of the repository:
+
+1. Build the Collector:
+
+  ```shell
+  make otelcorecol
+  ```
+
+2. Run the Collector with a local configuration file:
+
+  ```shell
+  ./bin/otelcorecol_<os>_<arch> --config ./examples/local/otel-config.yaml
+  ```
+
+  The actual name of the binary will depend on your platform, adjust accordingly
+  (e.g., `./bin/otelcorecol_darwin_arm64`).
+  
+  Replace `otel-config.yaml` with the appropriate configuration file as needed.
+
+3. Verify that your changes are reflected in the Collector's behavior by testing
+   it against the provided configuration.
 
 ## Membership, Roles, and Responsibilities
 

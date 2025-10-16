@@ -15,11 +15,12 @@ import (
 	"go.opentelemetry.io/collector/config/configauth"
 	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/configopaque"
+	"go.opentelemetry.io/collector/config/configoptional"
 	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/confmap"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
-	"go.opentelemetry.io/collector/exporter/exporterbatcher"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
 
@@ -36,6 +37,7 @@ func TestUnmarshalConfig(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 	require.NoError(t, cm.Unmarshal(&cfg))
+	require.NoError(t, xconfmap.Validate(&cfg))
 	assert.Equal(t,
 		&Config{
 			TimeoutConfig: exporterhelper.TimeoutConfig{
@@ -49,20 +51,17 @@ func TestUnmarshalConfig(t *testing.T) {
 				MaxInterval:         1 * time.Minute,
 				MaxElapsedTime:      10 * time.Minute,
 			},
-			QueueConfig: exporterhelper.QueueConfig{
+			QueueConfig: exporterhelper.QueueBatchConfig{
 				Enabled:      true,
+				Sizer:        exporterhelper.RequestSizerTypeItems,
 				NumConsumers: 2,
-				QueueSize:    10,
-			},
-			BatcherConfig: exporterbatcher.Config{
-				Enabled:      true,
-				FlushTimeout: 200 * time.Millisecond,
-				MinSizeConfig: exporterbatcher.MinSizeConfig{
-					MinSizeItems: 1000,
-				},
-				MaxSizeConfig: exporterbatcher.MaxSizeConfig{
-					MaxSizeItems: 10000,
-				},
+				QueueSize:    100000,
+				Batch: configoptional.Some(exporterhelper.BatchConfig{
+					FlushTimeout: 200 * time.Millisecond,
+					Sizer:        exporterhelper.RequestSizerTypeItems,
+					MinSize:      1000,
+					MaxSize:      10000,
+				}),
 			},
 			ClientConfig: configgrpc.ClientConfig{
 				Headers: map[string]configopaque.String{
@@ -72,20 +71,20 @@ func TestUnmarshalConfig(t *testing.T) {
 				},
 				Endpoint:    "1.2.3.4:1234",
 				Compression: "gzip",
-				TLSSetting: configtls.ClientConfig{
+				TLS: configtls.ClientConfig{
 					Config: configtls.Config{
 						CAFile: "/var/lib/mycert.pem",
 					},
 					Insecure: false,
 				},
-				Keepalive: &configgrpc.KeepaliveClientConfig{
+				Keepalive: configoptional.Some(configgrpc.KeepaliveClientConfig{
 					Time:                20 * time.Second,
 					PermitWithoutStream: true,
 					Timeout:             30 * time.Second,
-				},
+				}),
 				WriteBufferSize: 512 * 1024,
 				BalancerName:    "round_robin",
-				Auth:            &configauth.Authentication{AuthenticatorID: component.MustNewID("nop")},
+				Auth:            configoptional.Some(configauth.Config{AuthenticatorID: component.MustNewID("nop")}),
 			},
 		}, cfg)
 }
@@ -130,13 +129,17 @@ func TestUnmarshalInvalidConfig(t *testing.T) {
 			name:     "invalid_port",
 			errorMsg: `invalid port "port"`,
 		},
+		{
+			name:     "invalid_unix_socket",
+			errorMsg: "unix socket path cannot be empty",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := factory.CreateDefaultConfig()
 			sub, err := cm.Sub(tt.name)
 			require.NoError(t, err)
 			assert.NoError(t, sub.Unmarshal(&cfg))
-			assert.ErrorContains(t, component.ValidateConfig(cfg), tt.errorMsg)
+			assert.ErrorContains(t, xconfmap.Validate(cfg), tt.errorMsg)
 		})
 	}
 }
@@ -144,17 +147,24 @@ func TestUnmarshalInvalidConfig(t *testing.T) {
 func TestValidDNSEndpoint(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig().(*Config)
-	cfg.Endpoint = "dns://authority/backend.example.com:4317"
+	cfg.ClientConfig.Endpoint = "dns://authority/backend.example.com:4317"
+	assert.NoError(t, cfg.Validate())
+}
+
+func TestValidUnixSocketEndpoint(t *testing.T) {
+	factory := NewFactory()
+	cfg := factory.CreateDefaultConfig().(*Config)
+	cfg.ClientConfig.Endpoint = "unix:///my/unix/socket.sock"
 	assert.NoError(t, cfg.Validate())
 }
 
 func TestSanitizeEndpoint(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig().(*Config)
-	cfg.Endpoint = "dns://authority/backend.example.com:4317"
+	cfg.ClientConfig.Endpoint = "dns://authority/backend.example.com:4317"
 	assert.Equal(t, "authority/backend.example.com:4317", cfg.sanitizedEndpoint())
-	cfg.Endpoint = "dns:///backend.example.com:4317"
+	cfg.ClientConfig.Endpoint = "dns:///backend.example.com:4317"
 	assert.Equal(t, "backend.example.com:4317", cfg.sanitizedEndpoint())
-	cfg.Endpoint = "dns:////backend.example.com:4317"
+	cfg.ClientConfig.Endpoint = "dns:////backend.example.com:4317"
 	assert.Equal(t, "/backend.example.com:4317", cfg.sanitizedEndpoint())
 }
