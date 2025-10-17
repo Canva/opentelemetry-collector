@@ -45,7 +45,7 @@ func TestServerRateLimit(t *testing.T) {
 	require.NoError(t, err)
 
 	// test
-	srv.Handler.ServeHTTP(&httptest.ResponseRecorder{}, httptest.NewRequest("GET", "/", nil))
+	srv.Handler.ServeHTTP(&httptest.ResponseRecorder{}, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
 
 	// verify
 	assert.True(t, handlerCalled)
@@ -85,10 +85,10 @@ func TestRejectedServerRateLimit(t *testing.T) {
 
 	// test
 	response := &httptest.ResponseRecorder{}
-	srv.Handler.ServeHTTP(response, httptest.NewRequest("GET", "/", nil))
+	srv.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
 
 	// verify
-	assert.Equal(t, response.Result().StatusCode, http.StatusTooManyRequests)
+	assert.Equal(t, http.StatusTooManyRequests, response.Result().StatusCode)
 	assert.Equal(t, response.Result().Status, fmt.Sprintf("%v %s", http.StatusTooManyRequests, http.StatusText(http.StatusTooManyRequests)))
 }
 
