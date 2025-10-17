@@ -70,6 +70,7 @@ require (
 	go.opentelemetry.io/collector/client v1.43.0 // indirect
 	go.opentelemetry.io/collector/config/configcompression v1.43.0 // indirect
 	go.opentelemetry.io/collector/config/configmiddleware v1.43.0 // indirect
+	go.opentelemetry.io/collector/extension v1.43.0 // indirect
 	go.opentelemetry.io/collector/extension/extensionauth v1.43.0 // indirect
 	go.opentelemetry.io/collector/extension/extensionmiddleware v0.137.0 // indirect
 	go.opentelemetry.io/collector/featuregate v1.43.0 // indirect
