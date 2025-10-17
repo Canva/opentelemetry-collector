@@ -44,6 +44,9 @@ type ServerConfig struct {
 	// Auth for this receiver
 	Auth configoptional.Optional[AuthConfig] `mapstructure:"auth,omitempty"`
 
+	// RateLimit for this receiver
+	RateLimit configoptional.Optional[RateLimit] `mapstructure:"rate_limit,omitempty"`
+
 	// MaxRequestBodySize sets the maximum request body size in bytes. Default: 20MiB.
 	MaxRequestBodySize int64 `mapstructure:"max_request_body_size,omitempty"`
 
@@ -212,6 +215,17 @@ func (sc *ServerConfig) ToServer(ctx context.Context, host component.Host, setti
 		}
 
 		handler = authInterceptor(handler, server, auth.RequestParameters, serverOpts)
+	}
+
+	// The RateLimit interceptor should always be right after auth to ensure
+	// the request rate is within an acceptable threshold.
+	if sc.RateLimit.HasValue() {
+		limiter, err := sc.RateLimit.Get().rateLimiter(host.GetExtensions())
+		if err != nil {
+			return nil, err
+		}
+
+		handler = rateLimitInterceptor(handler, limiter)
 	}
 
 	if sc.CORS.HasValue() && len(sc.CORS.Get().AllowedOrigins) > 0 {
