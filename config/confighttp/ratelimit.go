@@ -16,6 +16,8 @@ import (
 type RateLimit struct {
 	// RateLimiterID specifies the name of the extension to use in order to rate limit the incoming data point.
 	RateLimiterID component.ID `mapstructure:"rate_limiter"`
+	// prevent unkeyed literal initialization
+	_ struct{}
 }
 
 type rateLimiter interface {

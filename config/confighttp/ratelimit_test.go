@@ -16,15 +16,16 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
+	"go.opentelemetry.io/collector/config/configoptional"
 )
 
 func TestServerRateLimit(t *testing.T) {
 	// prepare
 	hss := ServerConfig{
 		Endpoint: "localhost:0",
-		RateLimit: &RateLimit{
+		RateLimit: configoptional.Some(RateLimit{
 			RateLimiterID: component.NewID(component.MustNewType("mock")),
-		},
+		}),
 	}
 
 	limiter := &mockRateLimiter{}
@@ -53,9 +54,9 @@ func TestServerRateLimit(t *testing.T) {
 
 func TestInvalidServerRateLimit(t *testing.T) {
 	hss := ServerConfig{
-		RateLimit: &RateLimit{
+		RateLimit: configoptional.Some(RateLimit{
 			RateLimiterID: component.NewID(component.MustNewType("non_existing")),
-		},
+		}),
 	}
 
 	srv, err := hss.ToServer(context.Background(), componenttest.NewNopHost(), componenttest.NewNopTelemetrySettings(), http.NewServeMux())
@@ -67,9 +68,9 @@ func TestRejectedServerRateLimit(t *testing.T) {
 	// prepare
 	hss := ServerConfig{
 		Endpoint: "localhost:0",
-		RateLimit: &RateLimit{
+		RateLimit: configoptional.Some(RateLimit{
 			RateLimiterID: component.NewID(component.MustNewType("mock")),
-		},
+		}),
 	}
 	host := &mockHost{
 		ext: map[component.ID]component.Component{
